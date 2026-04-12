@@ -286,13 +286,11 @@ def run_automation():
             print("    Webshare register page loaded.")
 
             for registration_attempt in range(3):
+                ws_page.wait_for_load_state("domcontentloaded")
+                
                 # ── 4. Fill email (instant) ──────────────────────────────
                 print("[4] Entering email...")
-                # Try multiple selectors in case the page uses different IDs
-                email_input = ws_page.locator(
-                    "#email-input, input[type='email'], input[name='email'], "
-                    "input[placeholder*='mail' i], input[placeholder*='Email']"
-                ).first
+                email_input = ws_page.locator("#email-input").first
                 email_input.wait_for(state="visible", timeout=20000)
                 email_input.click()
                 email_input.fill(temp_email)
@@ -313,21 +311,24 @@ def run_automation():
 
                 # ── 6. Terms checkbox (it's BELOW the signup button) ─────
                 print("[6] Accepting Terms & Conditions...")
-                checkbox_el = ws_page.locator("input[type='checkbox']").first
-                checkbox_el.scroll_into_view_if_needed()
+                # To guarantee React registers the state, we click the spanning text
+                terms_text = ws_page.locator("text=I agree to the Terms of Service").first
+                terms_text.scroll_into_view_if_needed()
                 ws_page.wait_for_timeout(random.randint(300, 500))
-                _human_click(ws_page, checkbox_el)
-                ws_page.wait_for_timeout(500)
+                
+                _human_click(ws_page, terms_text)
+                ws_page.wait_for_timeout(1000)
+                
+                # Verify native checkbox
+                checkbox_el = ws_page.locator("input[type='checkbox']").first
                 is_checked = checkbox_el.is_checked()
-                print(f"    Checkbox checked: {is_checked}")
+                print(f"    Checkbox natively checked: {is_checked}")
                 if not is_checked:
-                    print("    Retry: focus + Space...")
-                    checkbox_el.focus()
-                    ws_page.wait_for_timeout(200)
-                    ws_page.keyboard.press("Space")
-                    ws_page.wait_for_timeout(500)
+                    print("    Retry clicking terms text...")
+                    _human_click(ws_page, terms_text)
+                    ws_page.wait_for_timeout(1000)
                     is_checked = checkbox_el.is_checked()
-                    print(f"    Checkbox checked: {is_checked}")
+                    print(f"    Checkbox natively checked: {is_checked}")
 
                 # Pause before clicking signup
                 ws_page.wait_for_timeout(random.randint(500, 1000))
