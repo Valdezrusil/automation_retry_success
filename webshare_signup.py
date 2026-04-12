@@ -188,7 +188,6 @@ def main():
                         continue
                     else:
                         print("    ERROR: MailTMP is down!")
-                        input("Press Enter to close...")
                         return
 
                 # Check for 502 / error page
@@ -266,7 +265,6 @@ def main():
 
             if not temp_email:
                 print("    ERROR: Could not read a valid email from MailTMP!")
-                input("Press Enter to close...")
                 return
 
             print(f"    Temp email: {temp_email}")
@@ -447,7 +445,6 @@ def main():
 
             if not email_found:
                 print("    ERROR: Verification email never arrived!")
-                input("Press Enter to close...")
                 return
 
             mailtmp_page.wait_for_timeout(3000)
@@ -488,7 +485,6 @@ def main():
 
             if not verify_url:
                 print("    ERROR: Could not find verification link!")
-                input("Press Enter to close...")
                 return
 
             print(f"    Opening: {verify_url}")
@@ -629,13 +625,12 @@ def main():
                 print("    No proxies found! Check the browser manually.")
             print("=" * 50)
 
-            input("\nPress Enter to close the browser...")
+
 
         except Exception as e:
             print(f"\n[ERROR] {e}")
             import traceback
             traceback.print_exc()
-            input("Press Enter to close...")
 
         finally:
             try:
