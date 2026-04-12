@@ -13,13 +13,8 @@ from playwright_recaptcha import recaptchav2
 from steel import Steel
 from dotenv import load_dotenv
 
-# Load .env from the same directory as this script
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(_script_dir, ".env"), override=True)
-
-STEEL_API_KEY = os.environ.get("STEEL_API_KEY", "")
-print(f"[DEBUG] STEEL_API_KEY loaded: {'yes' if STEEL_API_KEY else 'NO — .env not found!'}")
-print(f"[DEBUG] Key preview: {STEEL_API_KEY[:10]}..." if STEEL_API_KEY else "")
+# Load .env locally if it exists (Render will ignore this and use its own environment variables)
+load_dotenv()
 
 # ── Globals for Ctrl+C cleanup ──────────────────────────────────────
 _browser = None
@@ -125,9 +120,10 @@ def _dismiss_cookie_banner(page):
 def run_automation():
     global _browser, _steel_client, _steel_session_id, _captured_proxy_data
 
-    if not STEEL_API_KEY:
-        print("[ERROR] STEEL_API_KEY not found in .env — cannot proceed.")
-        return {"status": "error", "message": "STEEL_API_KEY missing in .env"}
+    steel_api_key = os.environ.get("STEEL_API_KEY", "")
+    if not steel_api_key:
+        print("[ERROR] STEEL_API_KEY not found in environment — cannot proceed.")
+        return {"status": "error", "message": "STEEL_API_KEY missing in environment"}
 
     steel_client = None
     steel_session = None
@@ -138,7 +134,7 @@ def run_automation():
         # ── 0. Launch Steel cloud browser ────────────────────────────
         try:
             print("[0] Starting Steel cloud browser session...")
-            steel_client = Steel(steel_api_key=STEEL_API_KEY)
+            steel_client = Steel(steel_api_key=steel_api_key)
             steel_session = steel_client.sessions.create(
                 timeout=900000,  # 15 minutes (hobby plan max)
             )
@@ -147,13 +143,13 @@ def run_automation():
             print(f"    Session ID : {steel_session.id}")
             debug_url = getattr(steel_session, 'debug_url', None)
             if debug_url:
-                live_url = f"{debug_url}?apiKey={STEEL_API_KEY}"
+                live_url = f"{debug_url}?apiKey={steel_api_key}"
             else:
                 live_url = "N/A"
             print(f"    Live view  : {live_url}")
             print(f"    Dashboard  : {getattr(steel_session, 'session_viewer_url', 'N/A')}")
 
-            cdp_url = f"wss://connect.steel.dev?apiKey={STEEL_API_KEY}&sessionId={steel_session.id}"
+            cdp_url = f"wss://connect.steel.dev?apiKey={steel_api_key}&sessionId={steel_session.id}"
             browser = pw.chromium.connect_over_cdp(cdp_url)
             _browser = browser
             context = browser.contexts[0]
