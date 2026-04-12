@@ -229,6 +229,13 @@
 
         <div id="errorBox" class="error-message"></div>
         
+        <div id="liveSessionBox" style="display: none; margin-top: 1rem; text-align: center; padding: 0.75rem; background-color: rgba(59, 130, 246, 0.1); border-radius: 0.5rem; border: 1px solid rgba(59, 130, 246, 0.2);">
+            <a id="liveSessionLink" href="#" target="_blank" style="color: var(--accent-color); font-weight: 600; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                Watch Live Browser Session
+            </a>
+        </div>
+        
         <div id="proxiesBox" class="proxies-container"></div>
     </div>
 
@@ -247,6 +254,7 @@
             errorBox.style.display = 'none';
             proxiesBox.style.display = 'none';
             proxiesBox.innerHTML = '';
+            document.getElementById('liveSessionBox').style.display = 'none';
             
             for (let i = 1; i <= 5; i++) {
                 const el = document.getElementById(`step-${i}`);
@@ -318,6 +326,12 @@
                     if (data.status === 'step') {
                         markStepActive(data.step_num);
                     } 
+                    else if (data.status === 'info' && data.live_url) {
+                        const liveBox = document.getElementById('liveSessionBox');
+                        const liveLink = document.getElementById('liveSessionLink');
+                        liveLink.href = data.live_url;
+                        liveBox.style.display = 'block';
+                    }
                     else if (data.status === 'error') {
                         // Extract only safe error intro
                         let msg = data.message || 'Unknown error occurred.';

@@ -150,6 +150,9 @@ def run_automation():
                 live_url = "N/A"
             print(f"    Live view  : {live_url}")
             print(f"    Dashboard  : {getattr(steel_session, 'session_viewer_url', 'N/A')}")
+            
+            if live_url != "N/A":
+                yield {"status": "info", "live_url": live_url}
 
             cdp_url = f"wss://connect.steel.dev?apiKey={steel_api_key}&sessionId={steel_session.id}"
             browser = pw.chromium.connect_over_cdp(cdp_url)
