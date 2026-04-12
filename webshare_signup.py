@@ -151,11 +151,8 @@ def run_automation():
             print(f"    Live view  : {live_url}")
             print(f"    Dashboard  : {getattr(steel_session, 'session_viewer_url', 'N/A')}")
 
-            cdp_url = f"wss://connect.steel.dev?sessionId={steel_session.id}"
-            browser = pw.chromium.connect_over_cdp(
-                cdp_url,
-                headers={"x-api-key": steel_api_key}
-            )
+            cdp_url = f"wss://connect.steel.dev?apiKey={steel_api_key}&sessionId={steel_session.id}"
+            browser = pw.chromium.connect_over_cdp(cdp_url)
             _browser = browser
             context = browser.contexts[0]
             page = context.new_page()
