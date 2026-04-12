@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webshare Proxy Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --container-bg: #1e293b;
+            --text-color: #f8fafc;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --error-color: #ef4444;
+            --success-color: #10b981;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            background-color: var(--container-bg);
+            padding: 3rem;
+            border-radius: 1rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5);
+        }
+
+        button:hover {
+            background-color: var(--accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.6);
+        }
+
+        button:disabled {
+            background-color: #475569;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .status {
+            margin-top: 1.5rem;
+            font-size: 1rem;
+            font-weight: 400;
+            min-height: 1.5rem;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .status.visible {
+            opacity: 1;
+        }
+        
+        .status.error {
+            color: var(--error-color);
+        }
+
+        .status.success {
+            color: var(--success-color);
+        }
+
+        .proxies-container {
+            margin-top: 2rem;
+            background-color: #0f172a;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+            text-align: left;
+            border: 1px solid #334155;
+        }
+
+        .proxy-item {
+            font-family: monospace;
+            padding: 0.5rem;
+            border-bottom: 1px solid #1e293b;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        
+        .proxy-item:last-child {
+            border-bottom: none;
+        }
+
+        /* Spinner animation */
+        .spinner {
+            display: inline-block;
+            width: 1.5rem;
+            height: 1.5rem;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+            display: none;
+        }
+
+        button.loading .spinner {
+            display: inline-block;
+        }
+        
+        button.loading span {
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Proxy Generator</h1>
+        <button id="startBtn">
+            <div class="spinner"></div>
+            <span>Start Process</span>
+        </button>
+        <div id="statusText" class="status"></div>
+        <div id="proxiesBox" class="proxies-container"></div>
+    </div>
+
+    <script>
+        const btn = document.getElementById('startBtn');
+        const status = document.getElementById('statusText');
+        const proxiesBox = document.getElementById('proxiesBox');
+
+        let timeoutId;
+
+        btn.addEventListener('click', async () => {
+            // Reset UI
+            btn.disabled = true;
+            btn.classList.add('loading');
+            btn.querySelector('span').textContent = 'Processing...';
+            status.className = 'status visible';
+            status.textContent = 'Loading your proxies...';
+            proxiesBox.style.display = 'none';
+            proxiesBox.innerHTML = '';
+
+            // Update text for long process
+            timeoutId = setTimeout(() => {
+                if(btn.disabled) {
+                    status.textContent = 'Taking longer than expected...';
+                }
+            }, 30000);
+
+            try {
+                const response = await fetch('/api/start', { method: 'POST' });
+                const data = await response.json();
+
+                clearTimeout(timeoutId);
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                btn.querySelector('span').textContent = 'Start Process';
+
+                if (data.status === 'success') {
+                    status.className = 'status visible success';
+                    status.textContent = 'Successfully generated proxies!';
+                    
+                    if (data.proxies && data.proxies.length > 0) {
+                        data.proxies.forEach(p => {
+                            const div = document.createElement('div');
+                            div.className = 'proxy-item';
+                            div.textContent = p;
+                            proxiesBox.appendChild(div);
+                        });
+                        proxiesBox.style.display = 'block';
+                    }
+                } else {
+                    status.className = 'status visible error';
+                    status.textContent = 'Failed: ' + (data.message || 'Unknown error');
+                }
+            } catch (err) {
+                clearTimeout(timeoutId);
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                btn.querySelector('span').textContent = 'Start Process';
+                status.className = 'status visible error';
+                status.textContent = 'Failed: Network error or timeout';
+            }
+        });
+    </script>
+</body>
+</html>
