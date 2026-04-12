@@ -4,16 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Webshare Proxy Generator</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-color: #0f172a;
             --container-bg: #1e293b;
             --text-color: #f8fafc;
+            --text-muted: #94a3b8;
             --accent-color: #3b82f6;
             --accent-hover: #2563eb;
             --error-color: #ef4444;
             --success-color: #10b981;
+            --border-color: #334155;
         }
 
         body {
@@ -23,18 +25,17 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
-            overflow: hidden;
+            padding: 20px;
         }
 
         .container {
             background-color: var(--container-bg);
-            padding: 3rem;
-            border-radius: 1rem;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
-            text-align: center;
-            max-width: 500px;
+            padding: 3rem 2.5rem;
+            border-radius: 1.2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+            max-width: 450px;
             width: 100%;
             transition: all 0.3s ease;
         }
@@ -43,8 +44,9 @@
             margin-top: 0;
             font-size: 2rem;
             font-weight: 700;
-            margin-bottom: 1.5rem;
-            background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+            margin-bottom: 2rem;
+            text-align: center;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -56,45 +58,98 @@
             padding: 1rem 2rem;
             font-size: 1.1rem;
             font-weight: 600;
-            border-radius: 0.5rem;
+            border-radius: 0.75rem;
             cursor: pointer;
             transition: all 0.2s ease;
             width: 100%;
-            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5);
+            box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.39);
+            margin-bottom: 2rem;
         }
 
-        button:hover {
+        button:hover:not(:disabled) {
             background-color: var(--accent-hover);
             transform: translateY(-2px);
-            box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.6);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
         }
 
         button:disabled {
             background-color: #475569;
+            color: #94a3b8;
             cursor: not-allowed;
-            transform: none;
             box-shadow: none;
         }
 
-        .status {
-            margin-top: 1.5rem;
-            font-size: 1rem;
-            font-weight: 400;
-            min-height: 1.5rem;
-            opacity: 0;
-            transition: opacity 0.3s ease;
+        /* Stepper UI */
+        .stepper {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            display: none;
+            margin-bottom: 1rem;
         }
 
-        .status.visible {
-            opacity: 1;
-        }
-        
-        .status.error {
-            color: var(--error-color);
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            color: var(--text-muted);
+            transition: all 0.3s ease;
+            font-weight: 500;
         }
 
-        .status.success {
+        .step-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+        }
+
+        /* Active State */
+        .step-item.active {
+            color: var(--text-color);
+        }
+        .step-item.active .step-icon {
+            border-color: var(--accent-color);
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+
+        /* Completed State */
+        .step-item.completed {
             color: var(--success-color);
+        }
+        .step-item.completed .step-icon {
+            border-color: var(--success-color);
+            background-color: var(--success-color);
+            color: var(--bg-color);
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            color: var(--error-color);
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            display: none;
+            word-wrap: break-word;
         }
 
         .proxies-container {
@@ -105,118 +160,214 @@
             max-height: 200px;
             overflow-y: auto;
             display: none;
-            text-align: left;
-            border: 1px solid #334155;
+            border: 1px solid var(--border-color);
         }
 
         .proxy-item {
-            font-family: monospace;
-            padding: 0.5rem;
-            border-bottom: 1px solid #1e293b;
-            color: #94a3b8;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--container-bg);
+            color: #e2e8f0;
             font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         .proxy-item:last-child {
             border-bottom: none;
         }
 
-        /* Spinner animation */
-        .spinner {
-            display: inline-block;
-            width: 1.5rem;
-            height: 1.5rem;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-            margin-right: 0.5rem;
-            vertical-align: middle;
-            display: none;
+        .copy-btn {
+            background: none;
+            border: none;
+            color: var(--accent-color);
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+            cursor: pointer;
+            box-shadow: none;
+            width: auto;
+            margin: 0;
+            border-radius: 0.25rem;
+            font-weight: 500;
         }
-
-        button.loading .spinner {
-            display: inline-block;
-        }
-        
-        button.loading span {
-            vertical-align: middle;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .copy-btn:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+            box-shadow: none;
+            transform: none;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Proxy Generator</h1>
-        <button id="startBtn">
-            <div class="spinner"></div>
-            <span>Start Process</span>
-        </button>
-        <div id="statusText" class="status"></div>
+        <button id="startBtn">Generate Now</button>
+
+        <!-- Stepper -->
+        <div class="stepper" id="stepper">
+            <div class="step-item" id="step-1">
+                <div class="step-icon"></div>
+                <span>Initializing Cloud Browser</span>
+            </div>
+            <div class="step-item" id="step-2">
+                <div class="step-icon"></div>
+                <span>Retrieving Temporary Email</span>
+            </div>
+            <div class="step-item" id="step-3">
+                <div class="step-icon"></div>
+                <span>Submitting Registration</span>
+            </div>
+            <div class="step-item" id="step-4">
+                <div class="step-icon"></div>
+                <span>Verifying Account (reCAPTCHA)</span>
+            </div>
+            <div class="step-item" id="step-5">
+                <div class="step-icon"></div>
+                <span>Extracting Proxies</span>
+            </div>
+        </div>
+
+        <div id="errorBox" class="error-message"></div>
+        
         <div id="proxiesBox" class="proxies-container"></div>
     </div>
 
     <script>
         const btn = document.getElementById('startBtn');
-        const status = document.getElementById('statusText');
+        const stepper = document.getElementById('stepper');
+        const errorBox = document.getElementById('errorBox');
         const proxiesBox = document.getElementById('proxiesBox');
 
-        let timeoutId;
+        let eventSource = null;
 
-        btn.addEventListener('click', async () => {
-            // Reset UI
+        function resetUI() {
             btn.disabled = true;
-            btn.classList.add('loading');
-            btn.querySelector('span').textContent = 'Processing...';
-            status.className = 'status visible';
-            status.textContent = 'Loading your proxies...';
+            btn.textContent = 'Processing...';
+            stepper.style.display = 'flex';
+            errorBox.style.display = 'none';
             proxiesBox.style.display = 'none';
             proxiesBox.innerHTML = '';
-
-            // Update text for long process
-            timeoutId = setTimeout(() => {
-                if(btn.disabled) {
-                    status.textContent = 'Taking longer than expected...';
-                }
-            }, 30000);
-
-            try {
-                const response = await fetch('/api/start', { method: 'POST' });
-                const data = await response.json();
-
-                clearTimeout(timeoutId);
-                btn.disabled = false;
-                btn.classList.remove('loading');
-                btn.querySelector('span').textContent = 'Start Process';
-
-                if (data.status === 'success') {
-                    status.className = 'status visible success';
-                    status.textContent = 'Successfully generated proxies!';
-                    
-                    if (data.proxies && data.proxies.length > 0) {
-                        data.proxies.forEach(p => {
-                            const div = document.createElement('div');
-                            div.className = 'proxy-item';
-                            div.textContent = p;
-                            proxiesBox.appendChild(div);
-                        });
-                        proxiesBox.style.display = 'block';
-                    }
-                } else {
-                    status.className = 'status visible error';
-                    status.textContent = 'Failed: ' + (data.message || 'Unknown error');
-                }
-            } catch (err) {
-                clearTimeout(timeoutId);
-                btn.disabled = false;
-                btn.classList.remove('loading');
-                btn.querySelector('span').textContent = 'Start Process';
-                status.className = 'status visible error';
-                status.textContent = 'Failed: Network error or timeout';
+            
+            for (let i = 1; i <= 5; i++) {
+                const el = document.getElementById(`step-${i}`);
+                el.className = 'step-item';
+                el.querySelector('.step-icon').innerHTML = '';
             }
+        }
+
+        function markStepActive(stepNum) {
+            // Mark previous steps as completed
+            for (let i = 1; i < stepNum; i++) {
+                const el = document.getElementById(`step-${i}`);
+                if (!el.classList.contains('completed')) {
+                    el.className = 'step-item completed';
+                    el.querySelector('.step-icon').innerHTML = '✓';
+                }
+            }
+            // Mark current step as active
+            const current = document.getElementById(`step-${stepNum}`);
+            if (current) {
+                current.className = 'step-item active';
+            }
+        }
+
+        function markAllCompleted() {
+            for (let i = 1; i <= 5; i++) {
+                const el = document.getElementById(`step-${i}`);
+                el.className = 'step-item completed';
+                el.querySelector('.step-icon').innerHTML = '✓';
+            }
+        }
+
+        function showError(message) {
+            errorBox.textContent = message;
+            errorBox.style.display = 'block';
+            
+            // Mark the active step as error (red border)
+            const activeStep = document.querySelector('.step-item.active');
+            if (activeStep) {
+                activeStep.classList.remove('active');
+                activeStep.style.color = 'var(--error-color)';
+                const icon = activeStep.querySelector('.step-icon');
+                icon.style.animation = 'none';
+                icon.style.borderColor = 'var(--error-color)';
+                icon.innerHTML = '✗';
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Retry Generation';
+            if (eventSource) {
+                eventSource.close();
+            }
+        }
+
+        btn.addEventListener('click', () => {
+            resetUI();
+            
+            // Close any existing connection
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource('/api/start');
+
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.status === 'step') {
+                        markStepActive(data.step_num);
+                    } 
+                    else if (data.status === 'error') {
+                        // Extract only safe error intro
+                        let msg = data.message || 'Unknown error occurred.';
+                        showError(msg);
+                    }
+                    else if (data.status === 'success') {
+                        markAllCompleted();
+                        
+                        // Render proxies
+                        if (data.proxies && data.proxies.length > 0) {
+                            data.proxies.forEach(p => {
+                                const div = document.createElement('div');
+                                div.className = 'proxy-item';
+                                
+                                const textSpan = document.createElement('span');
+                                textSpan.textContent = p;
+                                
+                                const copyBtn = document.createElement('button');
+                                copyBtn.className = 'copy-btn';
+                                copyBtn.textContent = 'Copy';
+                                copyBtn.onclick = () => {
+                                    navigator.clipboard.writeText(p);
+                                    copyBtn.textContent = 'Copied!';
+                                    setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+                                };
+
+                                div.appendChild(textSpan);
+                                div.appendChild(copyBtn);
+                                proxiesBox.appendChild(div);
+                            });
+                            proxiesBox.style.display = 'block';
+                        }
+                        
+                        btn.disabled = false;
+                        btn.textContent = 'Generate Again';
+                        eventSource.close();
+                    }
+
+                } catch (e) {
+                    showError("Failed to parse server response.");
+                }
+            };
+
+            eventSource.onerror = function(err) {
+                if (eventSource.readyState === EventSource.CLOSED) {
+                    return;
+                }
+                showError("Connection lost. Please try again.");
+                eventSource.close();
+            };
         });
     </script>
 </body>

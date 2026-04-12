@@ -120,10 +120,11 @@ def _dismiss_cookie_banner(page):
 def run_automation():
     global _browser, _steel_client, _steel_session_id, _captured_proxy_data
 
-    steel_api_key = os.environ.get("STEEL_API_KEY", "")
+    steel_api_key = os.environ.get("STEEL_API_KEY", "").strip()
     if not steel_api_key:
         print("[ERROR] STEEL_API_KEY not found in environment — cannot proceed.")
-        return {"status": "error", "message": "STEEL_API_KEY missing in environment"}
+        yield {"status": "error", "message": "STEEL_API_KEY missing in environment"}
+        return
 
     steel_client = None
     steel_session = None
@@ -134,6 +135,7 @@ def run_automation():
         # ── 0. Launch Steel cloud browser ────────────────────────────
         try:
             print("[0] Starting Steel cloud browser session...")
+            yield {"status": "step", "step_num": 1, "message": "Initializing Cloud Browser"}
             steel_client = Steel(steel_api_key=steel_api_key)
             steel_session = steel_client.sessions.create(
                 timeout=900000,  # 15 minutes (hobby plan max)
@@ -149,8 +151,11 @@ def run_automation():
             print(f"    Live view  : {live_url}")
             print(f"    Dashboard  : {getattr(steel_session, 'session_viewer_url', 'N/A')}")
 
-            cdp_url = f"wss://connect.steel.dev?apiKey={steel_api_key}&sessionId={steel_session.id}"
-            browser = pw.chromium.connect_over_cdp(cdp_url)
+            cdp_url = f"wss://connect.steel.dev?sessionId={steel_session.id}"
+            browser = pw.chromium.connect_over_cdp(
+                cdp_url,
+                headers={"x-api-key": steel_api_key}
+            )
             _browser = browser
             context = browser.contexts[0]
             page = context.new_page()
@@ -158,7 +163,8 @@ def run_automation():
             print("    Connected to Steel cloud browser (stealth ON)!")
         except Exception as e:
             print(f"[ERROR] Steel cloud browser failed: {e}")
-            return {"status": "error", "message": f"Browser init failed: {str(e)}"}
+            yield {"status": "error", "message": f"Browser init failed: {str(e)}"}
+            return
 
         # Attach the proxy-list response listener early
         page.on("response", _intercept_proxy_response)
@@ -166,6 +172,7 @@ def run_automation():
         try:
             # ── 1. Open MailTMP ──────────────────────────────────────
             print("\n[1] Opening MailTMP...")
+            yield {"status": "step", "step_num": 2, "message": "Getting temporary email"}
             email_pattern = re.compile(
                 r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$"
             )
@@ -184,7 +191,8 @@ def run_automation():
                         continue
                     else:
                         print("    ERROR: MailTMP is down!")
-                        return {"status": "error", "message": "MailTMP is down"}
+                        yield {"status": "error", "message": "MailTMP is down"}
+                        return
 
                 # Check for 502 / error page
                 title = page.title().lower()
@@ -261,13 +269,15 @@ def run_automation():
 
             if not temp_email:
                 print("    ERROR: Could not read a valid email from MailTMP!")
-                return {"status": "error", "message": "Could not extract temp email"}
+                yield {"status": "error", "message": "Could not extract temp email"}
+                return
 
             print(f"    Temp email: {temp_email}")
             mailtmp_page = page  # keep reference
 
             # ── 3. Open Webshare register page directly ──────────────
             print("\n[3] Opening Webshare register page...")
+            yield {"status": "step", "step_num": 3, "message": "Submitting registration form"}
             ws_page = context.new_page()
             stealth.apply_stealth_sync(ws_page)
             ws_page.on("response", _intercept_proxy_response)
@@ -334,6 +344,7 @@ def run_automation():
 
             # ── 8. Auto-solve reCAPTCHA if it appears ───────────────
             print("\n[8] Checking for reCAPTCHA...")
+            yield {"status": "step", "step_num": 4, "message": "Solving reCAPTCHA & verifying"}
             ws_page.wait_for_timeout(3000)
             # Build up human-like mouse history for reCAPTCHA scoring
             print("    Adding mouse activity...")
@@ -441,7 +452,8 @@ def run_automation():
 
             if not email_found:
                 print("    ERROR: Verification email never arrived!")
-                return {"status": "error", "message": "Verification email never arrived"}
+                yield {"status": "error", "message": "Verification email never arrived"}
+                return
 
             mailtmp_page.wait_for_timeout(3000)
 
@@ -481,7 +493,8 @@ def run_automation():
 
             if not verify_url:
                 print("    ERROR: Could not find verification link!")
-                return {"status": "error", "message": "Could not find verification link"}
+                yield {"status": "error", "message": "Could not find verification link"}
+                return
 
             print(f"    Opening: {verify_url}")
             ws_page.bring_to_front()
@@ -491,6 +504,7 @@ def run_automation():
 
             # ── 12. Navigate to proxy list ──────────────────────────
             print("[12] Navigating to proxy list...")
+            yield {"status": "step", "step_num": 5, "message": "Extracting proxies"}
             ws_page.wait_for_url("**/dashboard**", timeout=30000)
             ws_page.wait_for_timeout(3000)
 
@@ -617,18 +631,19 @@ def run_automation():
                     print(proxy)
                     print()
                 print(f"Total: {len(proxies)} proxies")
-                result = {"status": "success", "proxies": proxies}
+                yield {"status": "success", "proxies": proxies}
             else:
                 print("    No proxies found! Check the browser manually.")
-                result = {"status": "error", "message": "No proxies found! Captcha blocked it?"}
+                yield {"status": "error", "message": "No proxies found! Captcha blocked it?"}
             print("=" * 50)
-            return result
+            return
 
         except Exception as e:
             print(f"\n[ERROR] {e}")
             import traceback
             traceback.print_exc()
-            return {"status": "error", "message": f"Script failed: {str(e)}"}
+            yield {"status": "error", "message": f"Script failed: {str(e)}"}
+            return
 
         finally:
             try:
