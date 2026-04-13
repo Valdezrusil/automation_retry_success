@@ -285,13 +285,40 @@ def run_automation():
                 yield {"status": "step", "step_num": 3, "message": f"Sign-up Attempt {registration_attempt+1}/3"}
                 
                 ws_page.goto("https://webshare.io", timeout=60000)
-                ws_page.wait_for_load_state("networkidle")
+                ws_page.wait_for_load_state("domcontentloaded")
                 
+                # Handle possible overlays on the homepage
+                print("    Clearing potential overlays...")
+                ws_page.evaluate("""
+                    (() => {
+                        const selectors = [
+                            '.cm-wrapper', '.cookie-banner', '#onetrust-banner-sdk', 
+                            '[class*="cookie"]', '[id*="cookie"]', '.Intercom--booted'
+                        ];
+                        selectors.forEach(s => {
+                            document.querySelectorAll(s).forEach(el => el.remove());
+                        });
+                    })()
+                """)
+
                 # Organic click on "Sign Up" button (usually top-right)
                 print("    Clicking 'Sign Up' button organics...")
-                signup_nav = ws_page.locator("a.nav-register_button, a:has-text('Sign Up')").first
-                signup_nav.wait_for(state="visible", timeout=20000)
+                signup_nav = ws_page.locator("header a.nav-register_button, a.nav-register_button, a:has-text('Sign Up')").first
+                
+                # Ensure it's in view and ready
+                signup_nav.scroll_into_view_if_needed()
+                signup_nav.wait_for(state="visible", timeout=15000)
+                
+                # Execute click
                 _human_click(ws_page, signup_nav)
+                
+                # Wait for the URL to change to the register page
+                try:
+                    ws_page.wait_for_url("**/register**", timeout=15000)
+                except:
+                    print("    Click didn't trigger navigation yet, forcing click...")
+                    signup_nav.click(force=True)
+                    ws_page.wait_for_url("**/register**", timeout=10000)
                 
                 ws_page.wait_for_load_state("domcontentloaded")
                 ws_page.wait_for_timeout(2000)
