@@ -405,113 +405,64 @@ def run_automation():
                 # Pause before clicking signup
                 ws_page.wait_for_timeout(random.randint(500, 1000))
 
-                # ── 7. Human-like page interaction before sign-up ────────
-                # reCAPTCHA v2 invisible scores based on mouse/scroll behavior
-                # before the submit button is clicked. We need to "warm up" the page.
-                print("[7] Warming up page for reCAPTCHA scoring...")
-                vw = ws_page.evaluate("window.innerWidth")
-                vh = ws_page.evaluate("window.innerHeight")
-                
-                # Simulate reading the page: scroll down slowly, then back up
-                for scroll_y in [100, 200, 150, -50, 0]:
-                    ws_page.mouse.wheel(0, scroll_y)
-                    ws_page.wait_for_timeout(random.randint(300, 700))
-                
-                # Move mouse around the page naturally (5-8 movements)
-                for _ in range(random.randint(5, 8)):
-                    _human_move(ws_page,
-                                random.randint(int(vw * 0.1), int(vw * 0.9)),
-                                random.randint(int(vh * 0.1), int(vh * 0.9)))
-                    ws_page.wait_for_timeout(random.randint(200, 600))
-                
-                # Re-click into the email field briefly (mimics a human double-checking)
-                try:
-                    email_input.click()
-                    ws_page.wait_for_timeout(random.randint(300, 600))
-                    pw_field.click()
-                    ws_page.wait_for_timeout(random.randint(200, 400))
-                except:
-                    pass
-
-                # ── 8. Click Sign Up ────────────────────────────────────
-                print("[8] Clicking Sign Up button...")
-                signup_el = ws_page.locator("button[type='submit'], button:has-text('Sign Up With Email')").first
-                signup_el.scroll_into_view_if_needed()
-                
-                # Pre-click hover wiggle
-                box = signup_el.bounding_box()
-                if box:
-                    for _ in range(3):
-                        _human_move(ws_page, 
-                                    box['x'] + box['width']*random.uniform(0.1, 0.9), 
-                                    box['y'] + box['height']*random.uniform(0.1, 0.9))
-                        ws_page.wait_for_timeout(random.randint(100, 200))
-                
-                ws_page.wait_for_timeout(random.randint(500, 1000))
-                _human_click(ws_page, signup_el)
-
-                print(f"\n=== Sign-up initiated! ===")
+                print(f"\n=== Sign-up details ===")
                 print(f"Email used   : {temp_email}")
                 print(f"Password used: {password}")
 
-                # ── 9. Detect or Force-Trigger reCAPTCHA ─────────────────
-                print("\n[9] Waiting for reCAPTCHA to appear...")
+                # ── 7. Click Sign Up + wait for captcha (retry loop) ─────
                 yield {"status": "step", "step_num": 4, "message": "Solving reCAPTCHA & verifying"}
+                signup_el = ws_page.locator("button[type='submit'], button:has-text('Sign Up With Email')").first
+                signup_el.scroll_into_view_if_needed()
                 
-                # Wait up to 8 seconds for a captcha iframe to naturally appear
+                vw = ws_page.evaluate("window.innerWidth")
+                vh = ws_page.evaluate("window.innerHeight")
+                
+                MAX_SIGNUP_CLICKS = 5
+                MAX_CAPTCHA_ATTEMPTS = 3
                 has_recaptcha = False
-                for wait_tick in range(16):
-                    for frame in ws_page.frames:
-                        if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
-                            has_recaptcha = True
-                            break
-                    if has_recaptcha or "/register" not in ws_page.url:
-                        break
-                    ws_page.wait_for_timeout(500)
-                
-                # If no captcha appeared naturally, try to force-trigger it
-                if not has_recaptcha and "/register" in ws_page.url:
-                    print("    No captcha detected naturally. Force-triggering grecaptcha.execute()...")
-                    try:
-                        ws_page.evaluate("""
-                            () => {
-                                if (typeof grecaptcha !== 'undefined') {
-                                    try { grecaptcha.execute(); } catch(e) {}
-                                    try { grecaptcha.enterprise.execute(); } catch(e) {}
-                                }
-                            }
-                        """)
-                        ws_page.wait_for_timeout(3000)
-                    except Exception as e:
-                        print(f"    grecaptcha.execute() failed: {e}")
+
+                for click_attempt in range(1, MAX_SIGNUP_CLICKS + 1):
+                    print(f"\n[7] Sign Up click attempt {click_attempt}/{MAX_SIGNUP_CLICKS}...")
                     
-                    # Re-check for captcha frames after force-trigger
-                    for wait_tick in range(10):
+                    # Click with mouse cursor
+                    _human_click(ws_page, signup_el)
+                    
+                    # Quick mouse movements after clicking
+                    print("    Mouse movements...")
+                    for _ in range(random.randint(4, 7)):
+                        _human_move(ws_page,
+                                    random.randint(int(vw * 0.1), int(vw * 0.9)),
+                                    random.randint(int(vh * 0.1), int(vh * 0.9)))
+                        ws_page.wait_for_timeout(random.randint(100, 300))
+                    
+                    # Wait 10 seconds, checking for captcha every second
+                    print("    Waiting 10s for captcha...")
+                    for tick in range(10):
+                        # Check if captcha iframe appeared
                         for frame in ws_page.frames:
                             if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
                                 has_recaptcha = True
                                 break
-                        if has_recaptcha:
+                        # Check if page already redirected (signup succeeded without captcha)
+                        if has_recaptcha or "/register" not in ws_page.url:
                             break
-                        ws_page.wait_for_timeout(500)
-                
-                if not has_recaptcha and "/register" in ws_page.url:
-                    # Last resort: force-click the submit button again
-                    print("    Still no captcha. Re-clicking Sign Up with force...")
-                    signup_el.click(force=True)
-                    ws_page.wait_for_timeout(5000)
-                    for frame in ws_page.frames:
-                        if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
-                            has_recaptcha = True
-                            break
+                        ws_page.wait_for_timeout(1000)
+                    
+                    if has_recaptcha:
+                        print("    ✓ CAPTCHA appeared!")
+                        break
+                    elif "/register" not in ws_page.url:
+                        print("    ✓ Sign-up went through without captcha!")
+                        break
+                    else:
+                        print(f"    ✗ No captcha after 10s. Will retry...")
+                        # Small scroll + extra mouse wiggle before next attempt
+                        ws_page.mouse.wheel(0, random.randint(-100, 100))
+                        ws_page.wait_for_timeout(random.randint(500, 1000))
 
-                MAX_CAPTCHA_ATTEMPTS = 3
-
-                if "/register" not in ws_page.url:
-                    print("    No CAPTCHA — sign-up went through directly!")
-                elif has_recaptcha and "/register" in ws_page.url:
-                    print("    reCAPTCHA detected — solving via audio challenge...")
-                    # Debug: show what frames are available
+                # ── 8. Solve captcha if it appeared ──────────────────────
+                if has_recaptcha and "/register" in ws_page.url:
+                    print("\n[8] reCAPTCHA detected — solving via audio challenge...")
                     for f in ws_page.frames:
                         if "recaptcha" in f.url:
                             print(f"      frame: {f.name} -> {f.url[:80]}")
@@ -532,8 +483,10 @@ def run_automation():
                             else:
                                 print("    All auto-solve attempts exhausted.")
                                 print("    >>> Please solve the CAPTCHA manually in the live viewer <<<")
-                elif "/register" in ws_page.url:
-                    print("    No reCAPTCHA iframe found — waiting for redirect...")
+                elif "/register" not in ws_page.url:
+                    print("    No CAPTCHA needed — sign-up went through!")
+                else:
+                    print("    No reCAPTCHA iframe found after all attempts — waiting for redirect...")
 
                 # Wait for URL to leave /register (auto-solved or manual)
                 print("    Waiting for sign-up redirect...")
