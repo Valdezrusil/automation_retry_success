@@ -153,16 +153,10 @@ def run_automation():
         try:
             print("[0] Starting Steel cloud browser session...")
             yield {"status": "step", "step_num": 1, "message": "Initializing Cloud Browser"}
-            
-            # Select a random proxy from the list
-            selected_proxy = random.choice(PROXIES)
-            proxy_url = f"http://{PROXY_AUTH}@{selected_proxy}"
-            print(f"    Proxy      : {selected_proxy} (Authenticated)")
 
             steel_client = Steel(steel_api_key=steel_api_key)
             steel_session = steel_client.sessions.create(
                 timeout=900000,  # 15 minutes (hobby plan max)
-                use_proxy={"server": proxy_url}
             )
             _steel_client = steel_client
             _steel_session_id = str(steel_session.id)
