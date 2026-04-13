@@ -287,42 +287,47 @@ def run_automation():
                 ws_page.goto("https://webshare.io", timeout=60000)
                 ws_page.wait_for_load_state("domcontentloaded")
                 
-                # Handle possible overlays on the homepage
-                print("    Clearing potential overlays...")
-                ws_page.evaluate("""
-                    (() => {
-                        const selectors = [
-                            '.cm-wrapper', '.cookie-banner', '#onetrust-banner-sdk', 
-                            '[class*="cookie"]', '[id*="cookie"]', '.Intercom--booted'
-                        ];
-                        selectors.forEach(s => {
-                            document.querySelectorAll(s).forEach(el => el.remove());
-                        });
-                    })()
-                """)
+                # Handle possible overlays
+                ws_page.evaluate("() => document.querySelectorAll('.cm-wrapper, .cookie-banner, #onetrust-banner-sdk').forEach(el => el.remove())")
 
-                # Organic click on "Sign Up" button (usually top-right)
-                print("    Clicking 'Sign Up' button organics...")
-                signup_nav = ws_page.locator("header a.nav-register_button, a.nav-register_button, a:has-text('Sign Up')").first
+                # Organic click logic
+                print("    Detecting 'Sign Up' button...")
+                signup_nav = ws_page.locator("a.nav-register_button, header a:has-text('Sign Up'), a:has-text('Sign Up')").first
                 
-                # Ensure it's in view and ready
-                signup_nav.scroll_into_view_if_needed()
-                signup_nav.wait_for(state="visible", timeout=15000)
+                # Check if visible or if we need to expand a mobile menu
+                is_visible = False
+                try:
+                    is_visible = signup_nav.is_visible(timeout=5000)
+                except:
+                    pass
+
+                if not is_visible:
+                    print("    Button not visible (possibly mobile menu). Attempting to expand...")
+                    # Look for common hamburger menu selectors
+                    menu_btn = ws_page.locator("button.navbar-toggler, .navbar-toggle, .menu-icon, [aria-label*='Menu']").first
+                    if menu_btn.is_visible(timeout=3000):
+                        menu_btn.click()
+                        ws_page.wait_for_timeout(1000)
+
+                # Final attempt to click organically
+                try:
+                    signup_nav.scroll_into_view_if_needed(timeout=5000)
+                    _human_click(ws_page, signup_nav)
+                except Exception as e:
+                    print(f"    Organic click failed ({type(e).__name__}). Switching to Secure Referer Fallback...")
+                    # This bypasses UI glitches while still telling the server we came from the homepage
+                    ws_page.goto("https://dashboard.webshare.io/register", referer="https://webshare.io/")
                 
-                # Execute click
-                _human_click(ws_page, signup_nav)
-                
-                # Wait for the URL to change to the register page
+                # Final redirect check
                 try:
                     ws_page.wait_for_url("**/register**", timeout=15000)
                 except:
-                    print("    Click didn't trigger navigation yet, forcing click...")
-                    signup_nav.click(force=True)
-                    ws_page.wait_for_url("**/register**", timeout=10000)
+                    # Last ditch effort
+                    ws_page.goto("https://dashboard.webshare.io/register", referer="https://webshare.io/")
                 
                 ws_page.wait_for_load_state("domcontentloaded")
                 ws_page.wait_for_timeout(2000)
-                print("    Webshare register page loaded via homepage.")
+                print("    Webshare register page loaded successfully.")
                 
                 # ── 4. Fill email (instant) ──────────────────────────────
                 print("[4] Entering email...")
