@@ -13,6 +13,23 @@ from playwright_recaptcha import recaptchav2
 from steel import Steel
 from dotenv import load_dotenv
 
+# ── Proxy List ───────────────────────────────────────────────────────
+# Extracted from user credentials for signup bypass
+PROXIES = [
+    "31.59.20.176:6754",
+    "198.23.239.134:6540",
+    "45.38.107.97:6014",
+    "107.172.163.27:6543",
+    "198.105.121.200:6462",
+    "216.10.27.159:6837",
+    "142.111.67.146:5611",
+    "191.96.254.138:6185",
+    "31.58.9.4:6077",
+    "23.26.71.145:5628",
+]
+PROXY_AUTH = "yepzkppj:68bfyxw99s3u"
+# ─────────────────────────────────────────────────────────────────────
+
 # Load .env locally if it exists (Render will ignore this and use its own environment variables)
 load_dotenv()
 
@@ -136,9 +153,16 @@ def run_automation():
         try:
             print("[0] Starting Steel cloud browser session...")
             yield {"status": "step", "step_num": 1, "message": "Initializing Cloud Browser"}
+            
+            # Select a random proxy from the list
+            selected_proxy = random.choice(PROXIES)
+            proxy_url = f"http://{PROXY_AUTH}@{selected_proxy}"
+            print(f"    Proxy      : {selected_proxy} (Authenticated)")
+
             steel_client = Steel(steel_api_key=steel_api_key)
             steel_session = steel_client.sessions.create(
                 timeout=900000,  # 15 minutes (hobby plan max)
+                use_proxy={"server": proxy_url}
             )
             _steel_client = steel_client
             _steel_session_id = str(steel_session.id)
