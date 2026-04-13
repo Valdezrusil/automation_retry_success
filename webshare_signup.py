@@ -311,22 +311,21 @@ def run_automation():
 
                 # ── 6. Terms checkbox (it's BELOW the signup button) ─────
                 print("[6] Accepting Terms & Conditions...")
-                # To guarantee React registers the state, we click the spanning text
-                terms_text = ws_page.locator("text=I agree to the Terms of Service").first
-                terms_text.scroll_into_view_if_needed()
-                ws_page.wait_for_timeout(random.randint(300, 500))
-                
-                _human_click(ws_page, terms_text)
-                ws_page.wait_for_timeout(1000)
-                
-                # Verify native checkbox
                 checkbox_el = ws_page.locator("input[type='checkbox']").first
+                checkbox_el.scroll_into_view_if_needed()
+                ws_page.wait_for_timeout(300)
+                
+                # Use force=True to bypass overlapping labels without hitting hyperlinks
+                checkbox_el.click(force=True)
+                ws_page.wait_for_timeout(500)
+                
                 is_checked = checkbox_el.is_checked()
                 print(f"    Checkbox natively checked: {is_checked}")
                 if not is_checked:
-                    print("    Retry clicking terms text...")
-                    _human_click(ws_page, terms_text)
-                    ws_page.wait_for_timeout(1000)
+                    print("    Retry: focus + Space...")
+                    checkbox_el.focus()
+                    ws_page.keyboard.press("Space")
+                    ws_page.wait_for_timeout(500)
                     is_checked = checkbox_el.is_checked()
                     print(f"    Checkbox natively checked: {is_checked}")
 
