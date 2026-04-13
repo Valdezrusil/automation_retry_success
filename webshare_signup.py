@@ -340,14 +340,14 @@ def run_automation():
                 except Exception as e:
                     print(f"    Organic click failed ({type(e).__name__}). Switching to Secure Referer Fallback...")
                     # This bypasses UI glitches while still telling the server we came from the homepage
-                    ws_page.goto("https://dashboard.webshare.io/register", referer="https://webshare.io/")
+                    ws_page.goto("https://dashboard.webshare.io/register", referer="https://webshare.io/", timeout=60000)
                 
                 # Final redirect check
                 try:
                     ws_page.wait_for_url("**/register**", timeout=15000)
                 except:
                     # Last ditch effort
-                    ws_page.goto("https://dashboard.webshare.io/register", referer="https://webshare.io/")
+                    ws_page.goto("https://dashboard.webshare.io/register", referer="https://webshare.io/", timeout=60000)
                 
                 ws_page.wait_for_load_state("domcontentloaded")
                 ws_page.wait_for_timeout(2000)
