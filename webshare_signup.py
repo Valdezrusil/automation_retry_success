@@ -407,10 +407,14 @@ def run_automation():
 
                 # Wait for URL to leave /register (auto-solved or manual)
                 print("    Waiting for sign-up redirect...")
-                ws_page.wait_for_url(
-                    lambda url: "/register" not in url or url.endswith("/register?"), timeout=180000
-                )
-                print("    Sign-up successful!")
+                
+                # We use a manual polling loop instead of a lambda to avoid Playwright evaluation hangs
+                for _ in range(180):
+                    if "/register" not in ws_page.url or ws_page.url.endswith("register?"):
+                        break
+                    ws_page.wait_for_timeout(1000)
+                    
+                print("    Sign-up step finished or redirected!")
 
 
                 if ws_page.url.endswith("/register?"):
@@ -669,6 +673,6 @@ def run_automation():
 
 
 if __name__ == "__main__":
-    result = run_automation()
-    print("\nResult:")
-    print(json.dumps(result, indent=2))
+    for partial_result in run_automation():
+        print("\nYielded:")
+        print(json.dumps(partial_result, indent=2))
