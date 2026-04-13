@@ -204,7 +204,7 @@ def run_automation():
 
             for page_attempt in range(5):
                 try:
-                    page.goto("https://mailtmp.com/en/", timeout=30000)
+                    page.goto("https://mailtmp.com/en/", timeout=40000)
                     page.wait_for_load_state("domcontentloaded")
                     page.wait_for_timeout(3000)
                 except Exception as e:
@@ -597,14 +597,14 @@ def run_automation():
 
             print(f"    Opening: {verify_url}")
             ws_page.bring_to_front()
-            ws_page.goto(verify_url, timeout=30000)
+            ws_page.goto(verify_url, timeout=40000)
             ws_page.wait_for_timeout(3000)
             print("\n=== Email verified! Account should now be active. ===")
 
             # ── 12. Navigate to proxy list ──────────────────────────
             print("[12] Navigating to proxy list...")
             yield {"status": "step", "step_num": 5, "message": "Extracting proxies"}
-            ws_page.wait_for_url("**/dashboard**", timeout=30000)
+            ws_page.wait_for_url("**/dashboard**", timeout=40000)
             ws_page.wait_for_timeout(3000)
 
             # Find the proxy list URL (may be relative like /12345/proxy/list)
@@ -637,7 +637,7 @@ def run_automation():
 
             print(f"    Proxy page: {proxy_url}")
             _captured_proxy_data = None  # reset before navigation
-            ws_page.goto(proxy_url, timeout=30000)
+            ws_page.goto(proxy_url, timeout=40000)
             ws_page.wait_for_load_state("domcontentloaded")
             ws_page.wait_for_timeout(5000)
 
