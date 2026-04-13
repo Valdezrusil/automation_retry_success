@@ -314,32 +314,26 @@ def run_automation():
                 # Handle possible overlays
                 ws_page.evaluate("() => document.querySelectorAll('.cm-wrapper, .cookie-banner, #onetrust-banner-sdk').forEach(el => el.remove())")
 
-                # Organic click logic
+                # Organic click logic — find the VISIBLE Sign Up link only
                 print("    Detecting 'Sign Up' button...")
-                signup_nav = ws_page.locator("a.nav-register_button, header a:has-text('Sign Up'), a:has-text('Sign Up')").first
+                # Use :visible to skip the hidden mobile duplicate
+                signup_nav = ws_page.locator("a.nav-register_button:visible, a:has-text('Sign Up'):visible").first
                 
-                # Check if visible or if we need to expand a mobile menu
-                is_visible = False
                 try:
-                    is_visible = signup_nav.is_visible(timeout=5000)
-                except:
-                    pass
-
-                if not is_visible:
-                    print("    Button not visible (possibly mobile menu). Attempting to expand...")
-                    # Look for common hamburger menu selectors
-                    menu_btn = ws_page.locator("button.navbar-toggler, .navbar-toggle, .menu-icon, [aria-label*='Menu']").first
-                    if menu_btn.is_visible(timeout=3000):
-                        menu_btn.click()
-                        ws_page.wait_for_timeout(1000)
-
-                # Final attempt to click organically
-                try:
-                    signup_nav.scroll_into_view_if_needed(timeout=5000)
+                    signup_nav.wait_for(state="visible", timeout=10000)
                     _human_click(ws_page, signup_nav)
                 except Exception as e:
-                    print(f"    Organic click failed ({type(e).__name__}). Trying force click...")
-                    signup_nav.click(force=True)
+                    print(f"    Visible click failed ({type(e).__name__}). Trying JS click...")
+                    # Use JS to click the exact desktop button as last resort
+                    ws_page.evaluate("""
+                        () => {
+                            const btn = document.querySelector('a.nav-register_button');
+                            if (btn) { btn.click(); return; }
+                            const links = [...document.querySelectorAll('a')];
+                            const signup = links.find(a => a.textContent.trim() === 'Sign Up' && a.offsetParent !== null);
+                            if (signup) signup.click();
+                        }
+                    """)
                 
                 # Wait for the registration page to load — don't force any URL
                 # Whatever page the button takes us to, just wait for the email input
