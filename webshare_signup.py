@@ -338,20 +338,14 @@ def run_automation():
                     signup_nav.scroll_into_view_if_needed(timeout=5000)
                     _human_click(ws_page, signup_nav)
                 except Exception as e:
-                    print(f"    Organic click failed ({type(e).__name__}). Switching to Secure Referer Fallback...")
-                    # This bypasses UI glitches while still telling the server we came from the homepage
-                    ws_page.goto("https://dashboard.webshare.io/register", referer="https://webshare.io/", timeout=60000)
+                    print(f"    Organic click failed ({type(e).__name__}). Trying force click...")
+                    signup_nav.click(force=True)
                 
-                # Final redirect check
-                try:
-                    ws_page.wait_for_url("**/register**", timeout=15000)
-                except:
-                    # Last ditch effort
-                    ws_page.goto("https://dashboard.webshare.io/register", referer="https://webshare.io/", timeout=60000)
-                
+                # Wait for the registration page to load — don't force any URL
+                # Whatever page the button takes us to, just wait for the email input
                 ws_page.wait_for_load_state("domcontentloaded")
-                ws_page.wait_for_timeout(2000)
-                print("    Webshare register page loaded successfully.")
+                ws_page.wait_for_timeout(3000)
+                print(f"    Landed on: {ws_page.url}")
                 
                 # ── 4. Type email (human-like) ───────────────────────────
                 print("[4] Typing email...")
