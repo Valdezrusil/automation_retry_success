@@ -353,24 +353,32 @@ def run_automation():
                 ws_page.wait_for_timeout(2000)
                 print("    Webshare register page loaded successfully.")
                 
-                # ── 4. Fill email (instant) ──────────────────────────────
-                print("[4] Entering email...")
+                # ── 4. Type email (human-like) ───────────────────────────
+                print("[4] Typing email...")
                 email_input = ws_page.locator("#email-input").first
                 email_input.wait_for(state="visible", timeout=20000)
                 email_input.click()
-                email_input.fill(temp_email)
-                print(f"    Email entered: {temp_email}")
+                # Clear any existing value first
+                email_input.press("Control+a")
+                email_input.press("Backspace")
+                ws_page.wait_for_timeout(200)
+                # Type character by character at fast human speed
+                email_input.type(temp_email, delay=random.randint(30, 70))
+                print(f"    Email typed: {temp_email}")
 
-                ws_page.wait_for_timeout(300)
+                ws_page.wait_for_timeout(random.randint(300, 600))
 
-                # ── 5. Password (instant) ────────────────────────────────
+                # ── 5. Type password (human-like) ─────────────────────────
                 password = generate_password(12)
-                print(f"[5] Entering password: {password}")
+                print(f"[5] Typing password: {password}")
                 pw_field = ws_page.locator("input[type='password']").first
                 pw_field.wait_for(state="visible", timeout=10000)
                 pw_field.click()
-                pw_field.fill(password)
-                print(f"    Password entered.")
+                pw_field.press("Control+a")
+                pw_field.press("Backspace")
+                ws_page.wait_for_timeout(200)
+                pw_field.type(password, delay=random.randint(30, 70))
+                print(f"    Password typed.")
 
                 ws_page.wait_for_timeout(300)
 
