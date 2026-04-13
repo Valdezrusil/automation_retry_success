@@ -275,18 +275,27 @@ def run_automation():
             print(f"    Temp email: {temp_email}")
             mailtmp_page = page  # keep reference
 
-            # ── 3. Open Webshare register page directly ──────────────
-            print("\n[3] Opening Webshare register page...")
-            yield {"status": "step", "step_num": 3, "message": "Submitting registration form"}
+            # ── 3. Initialize Webshare page ───────────────────────────
             ws_page = context.new_page()
             stealth.apply_stealth_sync(ws_page)
             ws_page.on("response", _intercept_proxy_response)
-            ws_page.goto("https://dashboard.webshare.io/register", timeout=30000)
-            ws_page.wait_for_load_state("domcontentloaded")
-            print("    Webshare register page loaded.")
 
             for registration_attempt in range(3):
+                print(f"\n[3] Opening Webshare homepage (attempt {registration_attempt+1})...")
+                yield {"status": "step", "step_num": 3, "message": f"Sign-up Attempt {registration_attempt+1}/3"}
+                
+                ws_page.goto("https://webshare.io", timeout=60000)
+                ws_page.wait_for_load_state("networkidle")
+                
+                # Organic click on "Sign Up" button (usually top-right)
+                print("    Clicking 'Sign Up' button organics...")
+                signup_nav = ws_page.locator("a.nav-register_button, a:has-text('Sign Up')").first
+                signup_nav.wait_for(state="visible", timeout=20000)
+                _human_click(ws_page, signup_nav)
+                
                 ws_page.wait_for_load_state("domcontentloaded")
+                ws_page.wait_for_timeout(2000)
+                print("    Webshare register page loaded via homepage.")
                 
                 # ── 4. Fill email (instant) ──────────────────────────────
                 print("[4] Entering email...")
