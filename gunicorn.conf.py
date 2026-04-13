@@ -1,7 +1,7 @@
-import multiprocessing
-
-# Use gevent async workers for SSE (Server-Sent Events) long-lived connections
-worker_class = "gevent"
+# Use threaded workers for SSE (Server-Sent Events) long-lived connections
+# NOTE: gevent breaks Playwright Sync API, so we use gthread instead
+worker_class = "gthread"
+threads = 4
 
 # Single worker to stay within Render free-tier memory limits
 workers = 1
