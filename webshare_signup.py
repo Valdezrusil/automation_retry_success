@@ -375,10 +375,31 @@ def run_automation():
 
                 # ── 7. Click Sign Up ────────────────────────────────────
                 print("[7] Clicking Sign Up button...")
-                signup_el = ws_page.get_by_text("Sign Up With Email", exact=True)
+                signup_el = ws_page.locator("button[type='submit'], button:has-text('Sign Up With Email')").first
                 signup_el.scroll_into_view_if_needed()
-                ws_page.wait_for_timeout(300)
+                
+                # Human-like mouse wiggle on the button to trigger honeypots/hover states
+                print("    Pre-click wiggle...")
+                box = signup_el.bounding_box()
+                if box:
+                    for _ in range(3):
+                        _human_move(ws_page, 
+                                    box['x'] + box['width']*random.uniform(0.1, 0.9), 
+                                    box['y'] + box['height']*random.uniform(0.1, 0.9))
+                        ws_page.wait_for_timeout(random.randint(100, 200))
+                
+                ws_page.wait_for_timeout(random.randint(500, 1000))
                 _human_click(ws_page, signup_el)
+                
+                # Verification: If after 5 seconds we are still on the same URL and no captcha, click again
+                ws_page.wait_for_timeout(5000)
+                if ws_page.url.endswith("/register") or ws_page.url.endswith("/register/"):
+                    # Check for captcha frames
+                    has_frames = any("recaptcha" in f.url for f in ws_page.frames)
+                    if not has_frames:
+                        print("    [WARNING] No redirect or captcha detected. Force-refiring click...")
+                        signup_el.click(force=True)
+                        ws_page.wait_for_timeout(2000)
 
                 print(f"\n=== Sign-up initiated! ===")
                 print(f"Email used   : {temp_email}")
