@@ -1,5 +1,6 @@
 flask
 gunicorn
+gevent
 playwright
 playwright-stealth
 playwright-recaptcha
