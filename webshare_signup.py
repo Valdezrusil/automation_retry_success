@@ -456,8 +456,34 @@ def run_automation():
                 for click_attempt in range(1, MAX_SIGNUP_CLICKS + 1):
                     print(f"\n[7] Sign Up click attempt {click_attempt}/{MAX_SIGNUP_CLICKS}...")
                     
-                    # Click with mouse cursor
-                    _human_click(ws_page, signup_el)
+                    # Method A: Playwright locator.click() — most reliable for React apps
+                    print("    Click method: locator.click()...")
+                    try:
+                        signup_el.click(timeout=5000)
+                    except Exception as click_err:
+                        print(f"    locator.click() failed: {click_err}")
+                    time.sleep(1)
+                    
+                    # Method B: Dispatch a proper MouseEvent via JS (guaranteed React trigger)
+                    print("    Click method: JS dispatchEvent...")
+                    ws_page.evaluate("""() => {
+                        const btn = document.querySelector('button[type="submit"]')
+                            || document.querySelector('button.MuiButton-containedPrimary')
+                            || [...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign Up'));
+                        if (btn) {
+                            ['mousedown', 'mouseup', 'click'].forEach(evtType => {
+                                btn.dispatchEvent(new MouseEvent(evtType, {
+                                    bubbles: true, cancelable: true, view: window
+                                }));
+                            });
+                        }
+                    }""")
+                    time.sleep(1)
+                    
+                    # Debug: print page URL and check what happened
+                    print(f"    Current URL: {ws_page.url}")
+                    frame_count = len([f for f in ws_page.frames if "recaptcha" in f.url])
+                    print(f"    reCAPTCHA frames found: {frame_count}")
                     
                     # Organic mouse movements after clicking — simulate reading the page
                     print("    Mouse movements...")
