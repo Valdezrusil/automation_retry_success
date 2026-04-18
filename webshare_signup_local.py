@@ -90,8 +90,7 @@ def _human_move(page, target_x, target_y, steps=10):
         x = sx + (target_x - sx) * t + random.gauss(0, 2)
         y = sy + (target_y - sy) * t + random.gauss(0, 2)
         page.mouse.move(x, y)
-        # Increased delay significantly to simulate network lag from high-speed Render servers
-        page.wait_for_timeout(random.randint(50, 150))
+        page.wait_for_timeout(random.randint(10, 30))
 
 
 def _human_click(page, locator):
@@ -104,8 +103,7 @@ def _human_click(page, locator):
     tx = box["x"] + box["width"] * random.uniform(0.25, 0.75)
     ty = box["y"] + box["height"] * random.uniform(0.3, 0.7)
     _human_move(page, tx, ty)
-    # Pause realistically before actually pressing the mouse button
-    page.wait_for_timeout(random.randint(300, 700))
+    page.wait_for_timeout(random.randint(100, 300))
     page.mouse.click(tx, ty)
 
 
