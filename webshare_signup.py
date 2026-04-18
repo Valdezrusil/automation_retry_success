@@ -482,8 +482,30 @@ def run_automation():
                     
                     # Debug: print page URL and check what happened
                     print(f"    Current URL: {ws_page.url}")
-                    frame_count = len([f for f in ws_page.frames if "recaptcha" in f.url])
+                    
+                    # Dump ALL frame URLs to see if reCAPTCHA script even loaded
+                    all_frames = ws_page.frames
+                    print(f"    Total frames: {len(all_frames)}")
+                    for f in all_frames:
+                        if f.url and f.url != "about:blank":
+                            print(f"      Frame: {f.url[:100]}")
+                    
+                    frame_count = len([f for f in all_frames if "recaptcha" in f.url])
                     print(f"    reCAPTCHA frames found: {frame_count}")
+                    
+                    # Check if the "Try again later" error appeared
+                    try:
+                        page_text = ws_page.evaluate("document.body.innerText")
+                        if "try again later" in page_text.lower():
+                            print("    [!] 'Try again later' detected — reCAPTCHA rate limit!")
+                        if "automated queries" in page_text.lower():
+                            print("    [!] 'Automated queries' detected — bot flagged!")
+                    except Exception:
+                        pass
+                    
+                    # Check if grecaptcha object exists at all
+                    has_grecaptcha = ws_page.evaluate("typeof grecaptcha !== 'undefined'")
+                    print(f"    grecaptcha loaded: {has_grecaptcha}")
                     
                     # Organic mouse movements after clicking — simulate reading the page
                     print("    Mouse movements...")
