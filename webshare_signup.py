@@ -468,28 +468,75 @@ def run_automation():
                     time.sleep(random.uniform(0.3, 0.6))
                     
                     # Move mouse around organically (reading, looking at elements)
-                    for _ in range(random.randint(5, 9)):
+                    for _ in range(random.randint(3, 5)):
                         _human_move(ws_page,
                                     random.randint(int(vw * 0.1), int(vw * 0.9)),
                                     random.randint(int(vh * 0.1), int(vh * 0.9)))
-                        time.sleep(random.uniform(0.3, 0.8))
+                        time.sleep(random.uniform(0.3, 0.6))
                     
-                    # Scroll back up a bit
-                    ws_page.mouse.wheel(0, random.randint(-100, -30))
-                    time.sleep(random.uniform(0.2, 0.5))
-                    
-                    # Wait 10 seconds, checking for captcha every second
-                    print("    Waiting 10s for captcha...")
-                    for tick in range(10):
-                        # Check if captcha iframe appeared
+                    # Check for captcha after natural click (5s check)
+                    print("    Checking for captcha (5s)...")
+                    for tick in range(5):
                         for frame in ws_page.frames:
                             if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
                                 has_recaptcha = True
                                 break
-                        # Check if page already redirected (signup succeeded without captcha)
                         if has_recaptcha or "/register" not in ws_page.url:
                             break
                         ws_page.wait_for_timeout(1000)
+                    
+                    # Strategy 2: Force-trigger via grecaptcha.execute()
+                    if not has_recaptcha and "/register" in ws_page.url:
+                        print("    Captcha not triggered naturally. Forcing via grecaptcha.execute()...")
+                        try:
+                            ws_page.evaluate("""() => {
+                                if (typeof grecaptcha !== 'undefined') {
+                                    try { grecaptcha.execute(); } catch(e) {}
+                                    // Also try enterprise version
+                                    try { grecaptcha.enterprise.execute(); } catch(e) {}
+                                }
+                            }""")
+                        except Exception:
+                            pass
+                        time.sleep(3)
+                        for frame in ws_page.frames:
+                            if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
+                                has_recaptcha = True
+                                break
+                    
+                    # Strategy 3: Click the reCAPTCHA anchor checkbox directly
+                    if not has_recaptcha and "/register" in ws_page.url:
+                        print("    Trying to click reCAPTCHA checkbox directly...")
+                        try:
+                            for frame in ws_page.frames:
+                                if "recaptcha" in frame.url and "anchor" in frame.url:
+                                    checkbox = frame.locator("#recaptcha-anchor")
+                                    if checkbox.is_visible(timeout=3000):
+                                        checkbox.click()
+                                        has_recaptcha = True
+                                        print("    Clicked reCAPTCHA checkbox!")
+                                    break
+                        except Exception:
+                            pass
+                    
+                    # Strategy 4: Re-click Sign Up button with JS and wait longer
+                    if not has_recaptcha and "/register" in ws_page.url:
+                        print("    Last resort: JS form submit + 10s wait...")
+                        try:
+                            ws_page.evaluate("""() => {
+                                const btn = document.querySelector('button[type="submit"], .signup-btn, button.btn-primary');
+                                if (btn) btn.click();
+                            }""")
+                        except Exception:
+                            pass
+                        for tick in range(10):
+                            for frame in ws_page.frames:
+                                if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
+                                    has_recaptcha = True
+                                    break
+                            if has_recaptcha or "/register" not in ws_page.url:
+                                break
+                            ws_page.wait_for_timeout(1000)
                     
                     if has_recaptcha:
                         print("    [OK] CAPTCHA appeared!")
@@ -498,8 +545,7 @@ def run_automation():
                         print("    [OK] Sign-up went through without captcha!")
                         break
                     else:
-                        print(f"    [X] No captcha after 10s. Will retry...")
-                        # Scroll + extra mouse wiggle before next attempt
+                        print(f"    [X] No captcha after all strategies. Will retry...")
                         ws_page.mouse.wheel(0, random.randint(-100, 100))
                         time.sleep(random.uniform(0.5, 1.5))
 
