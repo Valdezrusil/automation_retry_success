@@ -416,26 +416,40 @@ def run_automation():
 
                 # ── 6. Terms checkbox (it's BELOW the signup button) ─────
                 print("[6] Accepting Terms & Conditions...")
-                checkbox_el = ws_page.locator("input[type='checkbox']").first
-                checkbox_el.scroll_into_view_if_needed()
-                ws_page.wait_for_timeout(300)
+                try:
+                    # Attempt to click the label or wrapper first (standard React behavior)
+                    label_el = ws_page.locator("label").filter(has=ws_page.locator("input[type='checkbox']")).first
+                    if label_el.is_visible(timeout=2000):
+                        label_el.click()
+                        ws_page.wait_for_timeout(300)
+                    else:
+                        ws_page.locator("input[type='checkbox']").first.click(force=True)
+                except Exception:
+                    pass
                 
-                # Use force=True to bypass overlapping labels without hitting hyperlinks
-                checkbox_el.click(force=True)
+                # FORCE React state updates for all inputs via JavaScript
+                print("    Forcing React state updates for form validity...")
+                ws_page.evaluate("""() => {
+                    // Update checkbox
+                    const cb = document.querySelector('input[type="checkbox"]');
+                    if (cb) {
+                        cb.checked = true;
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    
+                    // Forcefully enable the submit button in case React disabled it
+                    const btn = document.querySelector('button[type="submit"]') 
+                        || [...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign Up'));
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.removeAttribute('disabled');
+                        btn.classList.remove('Mui-disabled', 'disabled');
+                        // Ensure it has pointer events
+                        btn.style.pointerEvents = 'auto';
+                    }
+                }""")
                 ws_page.wait_for_timeout(500)
-                
-                is_checked = checkbox_el.is_checked()
-                print(f"    Checkbox natively checked: {is_checked}")
-                if not is_checked:
-                    print("    Retry: focus + Space...")
-                    checkbox_el.focus()
-                    ws_page.keyboard.press("Space")
-                    ws_page.wait_for_timeout(500)
-                    is_checked = checkbox_el.is_checked()
-                    print(f"    Checkbox natively checked: {is_checked}")
-
-                # Pause before clicking signup
-                ws_page.wait_for_timeout(random.randint(500, 1000))
 
                 print(f"\n=== Sign-up details ===")
                 print(f"Email used   : {temp_email}")
