@@ -108,7 +108,8 @@ def _human_click(page, locator):
 
 
 def _dismiss_cookie_banner(page):
-    """Reject cookies on MailTMP using the 'Only necessary' button."""
+    """Reject cookies on MailTMP using the 'Only necessary' button.
+    Only clicks the consent button — does NOT remove DOM elements."""
     try:
         btn = page.locator("xpath=//button[@data-role='necessary']")
         if btn.is_visible(timeout=3000):
@@ -118,19 +119,23 @@ def _dismiss_cookie_banner(page):
             return True
     except Exception:
         pass
-    # Fallback: remove the overlay via JS
+    # Fallback: try other common consent button selectors
     try:
-        page.evaluate("""
-            (() => {
-                for (const el of document.querySelectorAll('.cm-wrapper, [class*="cc--"]')) {
-                    el.remove();
-                }
-            })()
-        """)
-        print("    Cookie banner removed via JS.")
-        return True
+        for selector in [
+            "button[data-role='necessary']",
+            "button.cm-btn-accept",
+            "button#cm-acceptNone",
+            "a.cc-btn.cc-dismiss",
+        ]:
+            btn = page.locator(selector)
+            if btn.is_visible(timeout=1000):
+                btn.click()
+                print(f"    Cookie banner dismissed via: {selector}")
+                page.wait_for_timeout(500)
+                return True
     except Exception:
         pass
+    print("    No cookie banner found (OK).")
     return False
 
 
@@ -175,10 +180,14 @@ def run_automation():
             cdp_url = f"wss://connect.steel.dev?apiKey={steel_api_key}&sessionId={steel_session.id}"
             browser = pw.chromium.connect_over_cdp(cdp_url)
             _browser = browser
+            # We are using the default isolated session provided by Steel
+            # It provides a clean IP and fingerprint natively.
             context = browser.contexts[0]
+            context.clear_cookies()
             page = context.new_page()
             stealth.apply_stealth_sync(page)
             print("    Connected to Steel cloud browser (stealth ON)!")
+
         except Exception as e:
             print(f"[ERROR] Steel cloud browser failed: {e}")
             yield {"status": "error", "message": f"Browser init failed: {str(e)}"}
@@ -293,8 +302,36 @@ def run_automation():
             print(f"    Temp email: {temp_email}")
             mailtmp_page = page  # keep reference
 
-            # ── 3. Initialize Webshare page ───────────────────────────
+            # ── 3. Initialize Webshare page & Clear Extraneous Data ──
+            print("\n    Deep-clearing all browser state and cache before Webshare...")
             ws_page = context.new_page()
+            
+            try:
+                # Use CDP to clear deep browser network cache and cookies
+                cdp = context.new_cdp_session(ws_page)
+                cdp.send('Network.clearBrowserCookies')
+                cdp.send('Network.clearBrowserCache')
+            except Exception as e:
+                print(f"    [Warning] CDP deep clear failed: {e}")
+                
+            # Clear playwright context cookies
+            context.clear_cookies()
+            
+            # Navigate specifically to webshare so we have permission to clear its local storage
+            ws_page.goto("https://webshare.io", timeout=60000)
+            try:
+                ws_page.evaluate("""(() => { 
+                    localStorage.clear(); 
+                    sessionStorage.clear(); 
+                    if (window.indexedDB && window.indexedDB.databases) {
+                        window.indexedDB.databases().then(dbs => {
+                            dbs.forEach(db => window.indexedDB.deleteDatabase(db.name));
+                        });
+                    }
+                })()""")
+            except Exception as eval_err:
+                print(f"    [Warning] Storage clearing ignored: {eval_err}")
+            
             stealth.apply_stealth_sync(ws_page)
             ws_page.on("response", _intercept_proxy_response)
 
@@ -431,13 +468,13 @@ def run_automation():
                         ws_page.wait_for_timeout(1000)
                     
                     if has_recaptcha:
-                        print("    ✓ CAPTCHA appeared!")
+                        print("    [OK] CAPTCHA appeared!")
                         break
                     elif "/register" not in ws_page.url:
-                        print("    ✓ Sign-up went through without captcha!")
+                        print("    [OK] Sign-up went through without captcha!")
                         break
                     else:
-                        print(f"    ✗ No captcha after 10s. Will retry...")
+                        print(f"    [X] No captcha after 10s. Will retry...")
                         # Small scroll + extra mouse wiggle before next attempt
                         ws_page.mouse.wheel(0, random.randint(-100, 100))
                         ws_page.wait_for_timeout(random.randint(500, 1000))
