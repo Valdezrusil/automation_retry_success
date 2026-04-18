@@ -78,35 +78,46 @@ def _intercept_proxy_response(response):
             pass
 
 
-def _human_move(page, target_x, target_y, steps=10):
-    """Move mouse to (target_x, target_y) in interpolated steps with jitter."""
-    # Get current mouse position (default to center-ish if unknown)
+def _human_move(page, target_x, target_y, steps=None):
+    """Move mouse to (target_x, target_y) with human-like Bezier curve + jitter.
+    Uses Python time.sleep() for consistent timing across all environments."""
+    if steps is None:
+        steps = random.randint(12, 20)
     start = page.evaluate("() => ({x: window.innerWidth/2, y: window.innerHeight/2})")
     sx, sy = start["x"], start["y"]
+    # Random control point for a slight curve (not a straight line)
+    cx = (sx + target_x) / 2 + random.gauss(0, 30)
+    cy = (sy + target_y) / 2 + random.gauss(0, 30)
     for i in range(1, steps + 1):
         t = i / steps
-        # Ease-in-out curve
-        t = t * t * (3 - 2 * t)
-        x = sx + (target_x - sx) * t + random.gauss(0, 2)
-        y = sy + (target_y - sy) * t + random.gauss(0, 2)
+        # Quadratic Bezier for curved path
+        inv = 1 - t
+        x = inv * inv * sx + 2 * inv * t * cx + t * t * target_x
+        y = inv * inv * sy + 2 * inv * t * cy + t * t * target_y
+        # Add slight jitter that decreases as we approach the target
+        jitter = max(1, 4 * (1 - t))
+        x += random.gauss(0, jitter)
+        y += random.gauss(0, jitter)
         page.mouse.move(x, y)
-        # Increased delay significantly to simulate network lag from high-speed Render servers
-        page.wait_for_timeout(random.randint(50, 150))
+        # Python-side sleep — this is real wall-clock delay, unaffected by network speed
+        time.sleep(random.uniform(0.02, 0.08))
 
 
 def _human_click(page, locator):
-    """Move mouse to element with human-like motion, then click at random offset."""
+    """Move mouse to element with human-like Bezier motion, pause, then click."""
     box = locator.bounding_box()
     if not box:
         locator.click()
         return
-    # Random point within the element (not dead center)
+    # Random point within element (not dead center — humans are imprecise)
     tx = box["x"] + box["width"] * random.uniform(0.25, 0.75)
     ty = box["y"] + box["height"] * random.uniform(0.3, 0.7)
     _human_move(page, tx, ty)
-    # Pause realistically before actually pressing the mouse button
-    page.wait_for_timeout(random.randint(300, 700))
-    page.mouse.click(tx, ty)
+    # Human hesitation before click — real Python sleep
+    time.sleep(random.uniform(0.15, 0.45))
+    page.mouse.down()
+    time.sleep(random.uniform(0.04, 0.12))  # Hold mouse button briefly
+    page.mouse.up()
 
 
 def _dismiss_cookie_banner(page):
@@ -448,13 +459,24 @@ def run_automation():
                     # Click with mouse cursor
                     _human_click(ws_page, signup_el)
                     
-                    # Quick mouse movements after clicking
+                    # Organic mouse movements after clicking — simulate reading the page
                     print("    Mouse movements...")
-                    for _ in range(random.randint(4, 7)):
+                    time.sleep(random.uniform(0.5, 1.0))
+                    
+                    # Scroll down slightly like a human checking the page
+                    ws_page.mouse.wheel(0, random.randint(50, 150))
+                    time.sleep(random.uniform(0.3, 0.6))
+                    
+                    # Move mouse around organically (reading, looking at elements)
+                    for _ in range(random.randint(5, 9)):
                         _human_move(ws_page,
                                     random.randint(int(vw * 0.1), int(vw * 0.9)),
                                     random.randint(int(vh * 0.1), int(vh * 0.9)))
-                        ws_page.wait_for_timeout(random.randint(100, 300))
+                        time.sleep(random.uniform(0.3, 0.8))
+                    
+                    # Scroll back up a bit
+                    ws_page.mouse.wheel(0, random.randint(-100, -30))
+                    time.sleep(random.uniform(0.2, 0.5))
                     
                     # Wait 10 seconds, checking for captcha every second
                     print("    Waiting 10s for captcha...")
@@ -477,9 +499,9 @@ def run_automation():
                         break
                     else:
                         print(f"    [X] No captcha after 10s. Will retry...")
-                        # Small scroll + extra mouse wiggle before next attempt
+                        # Scroll + extra mouse wiggle before next attempt
                         ws_page.mouse.wheel(0, random.randint(-100, 100))
-                        ws_page.wait_for_timeout(random.randint(500, 1000))
+                        time.sleep(random.uniform(0.5, 1.5))
 
                 # ── 8. Solve captcha if it appeared ──────────────────────
                 if has_recaptcha and "/register" in ws_page.url:
