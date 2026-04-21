@@ -78,46 +78,33 @@ def _intercept_proxy_response(response):
             pass
 
 
-def _human_move(page, target_x, target_y, steps=None):
-    """Move mouse to (target_x, target_y) with human-like Bezier curve + jitter.
-    Uses Python time.sleep() for consistent timing across all environments."""
-    if steps is None:
-        steps = random.randint(12, 20)
+def _human_move(page, target_x, target_y, steps=10):
+    """Move mouse to (target_x, target_y) in interpolated steps with jitter."""
+    # Get current mouse position (default to center-ish if unknown)
     start = page.evaluate("() => ({x: window.innerWidth/2, y: window.innerHeight/2})")
     sx, sy = start["x"], start["y"]
-    # Random control point for a slight curve (not a straight line)
-    cx = (sx + target_x) / 2 + random.gauss(0, 30)
-    cy = (sy + target_y) / 2 + random.gauss(0, 30)
     for i in range(1, steps + 1):
         t = i / steps
-        # Quadratic Bezier for curved path
-        inv = 1 - t
-        x = inv * inv * sx + 2 * inv * t * cx + t * t * target_x
-        y = inv * inv * sy + 2 * inv * t * cy + t * t * target_y
-        # Add slight jitter that decreases as we approach the target
-        jitter = max(1, 4 * (1 - t))
-        x += random.gauss(0, jitter)
-        y += random.gauss(0, jitter)
+        # Ease-in-out curve
+        t = t * t * (3 - 2 * t)
+        x = sx + (target_x - sx) * t + random.gauss(0, 2)
+        y = sy + (target_y - sy) * t + random.gauss(0, 2)
         page.mouse.move(x, y)
-        # Python-side sleep — this is real wall-clock delay, unaffected by network speed
-        time.sleep(random.uniform(0.02, 0.08))
+        page.wait_for_timeout(random.randint(10, 30))
 
 
 def _human_click(page, locator):
-    """Move mouse to element with human-like Bezier motion, pause, then click."""
+    """Move mouse to element with human-like motion, then click at random offset."""
     box = locator.bounding_box()
     if not box:
         locator.click()
         return
-    # Random point within element (not dead center — humans are imprecise)
+    # Random point within the element (not dead center)
     tx = box["x"] + box["width"] * random.uniform(0.25, 0.75)
     ty = box["y"] + box["height"] * random.uniform(0.3, 0.7)
     _human_move(page, tx, ty)
-    # Human hesitation before click — real Python sleep
-    time.sleep(random.uniform(0.15, 0.45))
-    page.mouse.down()
-    time.sleep(random.uniform(0.04, 0.12))  # Hold mouse button briefly
-    page.mouse.up()
+    page.wait_for_timeout(random.randint(100, 300))
+    page.mouse.click(tx, ty)
 
 
 def _dismiss_cookie_banner(page):
@@ -416,40 +403,26 @@ def run_automation():
 
                 # ── 6. Terms checkbox (it's BELOW the signup button) ─────
                 print("[6] Accepting Terms & Conditions...")
-                try:
-                    # Attempt to click the label or wrapper first (standard React behavior)
-                    label_el = ws_page.locator("label").filter(has=ws_page.locator("input[type='checkbox']")).first
-                    if label_el.is_visible(timeout=2000):
-                        label_el.click()
-                        ws_page.wait_for_timeout(300)
-                    else:
-                        ws_page.locator("input[type='checkbox']").first.click(force=True)
-                except Exception:
-                    pass
+                checkbox_el = ws_page.locator("input[type='checkbox']").first
+                checkbox_el.scroll_into_view_if_needed()
+                ws_page.wait_for_timeout(300)
                 
-                # FORCE React state updates for all inputs via JavaScript
-                print("    Forcing React state updates for form validity...")
-                ws_page.evaluate("""() => {
-                    // Update checkbox
-                    const cb = document.querySelector('input[type="checkbox"]');
-                    if (cb) {
-                        cb.checked = true;
-                        cb.dispatchEvent(new Event('change', { bubbles: true }));
-                        cb.dispatchEvent(new Event('input', { bubbles: true }));
-                    }
-                    
-                    // Forcefully enable the submit button in case React disabled it
-                    const btn = document.querySelector('button[type="submit"]') 
-                        || [...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign Up'));
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.removeAttribute('disabled');
-                        btn.classList.remove('Mui-disabled', 'disabled');
-                        // Ensure it has pointer events
-                        btn.style.pointerEvents = 'auto';
-                    }
-                }""")
+                # Use force=True to bypass overlapping labels without hitting hyperlinks
+                checkbox_el.click(force=True)
                 ws_page.wait_for_timeout(500)
+                
+                is_checked = checkbox_el.is_checked()
+                print(f"    Checkbox natively checked: {is_checked}")
+                if not is_checked:
+                    print("    Retry: focus + Space...")
+                    checkbox_el.focus()
+                    ws_page.keyboard.press("Space")
+                    ws_page.wait_for_timeout(500)
+                    is_checked = checkbox_el.is_checked()
+                    print(f"    Checkbox natively checked: {is_checked}")
+
+                # Pause before clicking signup
+                ws_page.wait_for_timeout(random.randint(500, 1000))
 
                 print(f"\n=== Sign-up details ===")
                 print(f"Email used   : {temp_email}")
@@ -470,146 +443,42 @@ def run_automation():
                 for click_attempt in range(1, MAX_SIGNUP_CLICKS + 1):
                     print(f"\n[7] Sign Up click attempt {click_attempt}/{MAX_SIGNUP_CLICKS}...")
                     
-                    # Method A: Playwright locator.click() — most reliable for React apps
-                    print("    Click method: locator.click()...")
-                    try:
-                        signup_el.click(timeout=5000)
-                    except Exception as click_err:
-                        print(f"    locator.click() failed: {click_err}")
-                    time.sleep(1)
+                    # Click with mouse cursor
+                    print("    Clicking 'Sign Up' with human-like motion...")
+                    _human_click(ws_page, signup_el)
                     
-                    # Method B: Dispatch a proper MouseEvent via JS (guaranteed React trigger)
-                    print("    Click method: JS dispatchEvent...")
-                    ws_page.evaluate("""() => {
-                        const btn = document.querySelector('button[type="submit"]')
-                            || document.querySelector('button.MuiButton-containedPrimary')
-                            || [...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign Up'));
-                        if (btn) {
-                            ['mousedown', 'mouseup', 'click'].forEach(evtType => {
-                                btn.dispatchEvent(new MouseEvent(evtType, {
-                                    bubbles: true, cancelable: true, view: window
-                                }));
-                            });
-                        }
-                    }""")
-                    time.sleep(1)
-                    
-                    # Debug: print page URL and check what happened
-                    print(f"    Current URL: {ws_page.url}")
-                    
-                    # Dump ALL frame URLs to see if reCAPTCHA script even loaded
-                    all_frames = ws_page.frames
-                    print(f"    Total frames: {len(all_frames)}")
-                    for f in all_frames:
-                        if f.url and f.url != "about:blank":
-                            print(f"      Frame: {f.url[:100]}")
-                    
-                    frame_count = len([f for f in all_frames if "recaptcha" in f.url])
-                    print(f"    reCAPTCHA frames found: {frame_count}")
-                    
-                    # Check if the "Try again later" error appeared
-                    try:
-                        page_text = ws_page.evaluate("document.body.innerText")
-                        if "try again later" in page_text.lower():
-                            print("    [!] 'Try again later' detected — reCAPTCHA rate limit!")
-                        if "automated queries" in page_text.lower():
-                            print("    [!] 'Automated queries' detected — bot flagged!")
-                    except Exception:
-                        pass
-                    
-                    # Check if grecaptcha object exists at all
-                    has_grecaptcha = ws_page.evaluate("typeof grecaptcha !== 'undefined'")
-                    print(f"    grecaptcha loaded: {has_grecaptcha}")
-                    
-                    # Organic mouse movements after clicking — simulate reading the page
+                    # Quick mouse movements after clicking
                     print("    Mouse movements...")
-                    time.sleep(random.uniform(0.5, 1.0))
-                    
-                    # Scroll down slightly like a human checking the page
-                    ws_page.mouse.wheel(0, random.randint(50, 150))
-                    time.sleep(random.uniform(0.3, 0.6))
-                    
-                    # Move mouse around organically (reading, looking at elements)
-                    for _ in range(random.randint(3, 5)):
+                    for _ in range(random.randint(4, 7)):
                         _human_move(ws_page,
                                     random.randint(int(vw * 0.1), int(vw * 0.9)),
                                     random.randint(int(vh * 0.1), int(vh * 0.9)))
-                        time.sleep(random.uniform(0.3, 0.6))
+                        ws_page.wait_for_timeout(random.randint(100, 300))
                     
-                    # Check for captcha after natural click (5s check)
-                    print("    Checking for captcha (5s)...")
-                    for tick in range(5):
+                    # Wait 10 seconds, checking for captcha every second
+                    print("    Waiting 10s for captcha...")
+                    for tick in range(10):
+                        # Check if captcha iframe appeared
                         for frame in ws_page.frames:
                             if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
                                 has_recaptcha = True
                                 break
+                        # Check if page already redirected (signup succeeded without captcha)
                         if has_recaptcha or "/register" not in ws_page.url:
                             break
                         ws_page.wait_for_timeout(1000)
                     
-                    # Strategy 2: Force-trigger via grecaptcha.execute()
-                    if not has_recaptcha and "/register" in ws_page.url:
-                        print("    Captcha not triggered naturally. Forcing via grecaptcha.execute()...")
-                        try:
-                            ws_page.evaluate("""() => {
-                                if (typeof grecaptcha !== 'undefined') {
-                                    try { grecaptcha.execute(); } catch(e) {}
-                                    // Also try enterprise version
-                                    try { grecaptcha.enterprise.execute(); } catch(e) {}
-                                }
-                            }""")
-                        except Exception:
-                            pass
-                        time.sleep(3)
-                        for frame in ws_page.frames:
-                            if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
-                                has_recaptcha = True
-                                break
-                    
-                    # Strategy 3: Click the reCAPTCHA anchor checkbox directly
-                    if not has_recaptcha and "/register" in ws_page.url:
-                        print("    Trying to click reCAPTCHA checkbox directly...")
-                        try:
-                            for frame in ws_page.frames:
-                                if "recaptcha" in frame.url and "anchor" in frame.url:
-                                    checkbox = frame.locator("#recaptcha-anchor")
-                                    if checkbox.is_visible(timeout=3000):
-                                        checkbox.click()
-                                        has_recaptcha = True
-                                        print("    Clicked reCAPTCHA checkbox!")
-                                    break
-                        except Exception:
-                            pass
-                    
-                    # Strategy 4: Re-click Sign Up button with JS and wait longer
-                    if not has_recaptcha and "/register" in ws_page.url:
-                        print("    Last resort: JS form submit + 10s wait...")
-                        try:
-                            ws_page.evaluate("""() => {
-                                const btn = document.querySelector('button[type="submit"], .signup-btn, button.btn-primary');
-                                if (btn) btn.click();
-                            }""")
-                        except Exception:
-                            pass
-                        for tick in range(10):
-                            for frame in ws_page.frames:
-                                if re.search(r"/recaptcha/(api2|enterprise)/(anchor|bframe)", frame.url):
-                                    has_recaptcha = True
-                                    break
-                            if has_recaptcha or "/register" not in ws_page.url:
-                                break
-                            ws_page.wait_for_timeout(1000)
-                    
                     if has_recaptcha:
-                        print("    [OK] CAPTCHA appeared!")
+                        print("    ✓ CAPTCHA appeared!")
                         break
                     elif "/register" not in ws_page.url:
-                        print("    [OK] Sign-up went through without captcha!")
+                        print("    ✓ Sign-up went through without captcha!")
                         break
                     else:
-                        print(f"    [X] No captcha after all strategies. Will retry...")
+                        print(f"    ✗ No captcha after 10s. Will retry...")
+                        # Small scroll + extra mouse wiggle before next attempt
                         ws_page.mouse.wheel(0, random.randint(-100, 100))
-                        time.sleep(random.uniform(0.5, 1.5))
+                        ws_page.wait_for_timeout(random.randint(500, 1000))
 
                 # ── 8. Solve captcha if it appeared ──────────────────────
                 if has_recaptcha and "/register" in ws_page.url:
