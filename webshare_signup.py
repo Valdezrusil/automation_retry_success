@@ -150,7 +150,6 @@ def run_automation():
 
     steel_client = None
     steel_session = None
-    ws_context = None
 
     stealth = Stealth()
 
@@ -305,18 +304,7 @@ def run_automation():
 
             # ── 3. Initialize Webshare page & Clear Extraneous Data ──
             print("\n    Deep-clearing all browser state and cache before Webshare...")
-
-            # Create a completely NEW browser context for Webshare with a randomized fingerprint
-            # Varying viewport + locale prevents Google from matching a deterministic bot profile
-            ws_context = browser.new_context(
-                viewport={
-                    "width": random.randint(1280, 1440),
-                    "height": random.randint(720, 900),
-                },
-                locale="en-US",
-                timezone_id="America/New_York",
-            )
-            ws_page = ws_context.new_page()
+            ws_page = context.new_page()
             stealth.apply_stealth_sync(ws_page)
             ws_page.on("response", _intercept_proxy_response)
 
@@ -325,7 +313,7 @@ def run_automation():
 
             # Clear every possible trace BEFORE reCAPTCHA has a chance to load
             try:
-                cdp = ws_context.new_cdp_session(ws_page)
+                cdp = context.new_cdp_session(ws_page)
                 # Wipe Webshare origin
                 cdp.send('Storage.clearDataForOrigin', {
                     'origin': 'https://webshare.io',
@@ -815,10 +803,6 @@ def run_automation():
         finally:
             try:
                 browser.close()
-            except Exception:
-                pass
-            try:
-                ws_context.close()
             except Exception:
                 pass
             if steel_client and steel_session:
