@@ -150,6 +150,7 @@ def run_automation():
 
     steel_client = None
     steel_session = None
+    ws_context = None
 
     stealth = Stealth()
 
@@ -162,7 +163,6 @@ def run_automation():
             steel_client = Steel(steel_api_key=steel_api_key)
             steel_session = steel_client.sessions.create(
                 timeout=900000,  # 15 minutes (hobby plan max)
-                use_proxy=True,  # Fresh residential proxy IP per session
             )
             _steel_client = steel_client
             _steel_session_id = str(steel_session.id)
@@ -306,9 +306,16 @@ def run_automation():
             # ── 3. Initialize Webshare page & Clear Extraneous Data ──
             print("\n    Deep-clearing all browser state and cache before Webshare...")
 
-            # Create a completely NEW browser context for Webshare
-            # This gives isolated cookies, localStorage, indexedDB, service workers, cache
-            ws_context = browser.new_context()
+            # Create a completely NEW browser context for Webshare with a randomized fingerprint
+            # Varying viewport + locale prevents Google from matching a deterministic bot profile
+            ws_context = browser.new_context(
+                viewport={
+                    "width": random.randint(1280, 1440),
+                    "height": random.randint(720, 900),
+                },
+                locale="en-US",
+                timezone_id="America/New_York",
+            )
             ws_page = ws_context.new_page()
             stealth.apply_stealth_sync(ws_page)
             ws_page.on("response", _intercept_proxy_response)
@@ -316,16 +323,26 @@ def run_automation():
             # Navigate first so we have permission to clear origin-specific data
             ws_page.goto("https://webshare.io", timeout=60000)
 
+            # Clear every possible trace BEFORE reCAPTCHA has a chance to load
             try:
-                # Comprehensive CDP wipe: cookies, localStorage, indexedDB, cache, service workers, etc.
                 cdp = ws_context.new_cdp_session(ws_page)
+                # Wipe Webshare origin
                 cdp.send('Storage.clearDataForOrigin', {
                     'origin': 'https://webshare.io',
                     'storageTypes': 'all',
                 })
+                # Wipe Google origins — reCAPTCHA sets NID / 1P_JAR / CONSENT cookies here
+                for google_origin in ['https://www.google.com', 'https://google.com', 'https://www.gstatic.com']:
+                    try:
+                        cdp.send('Storage.clearDataForOrigin', {
+                            'origin': google_origin,
+                            'storageTypes': 'all',
+                        })
+                    except Exception:
+                        pass
                 cdp.send('Network.clearBrowserCache')
                 cdp.send('Network.clearBrowserCookies')
-                print("    CDP full origin wipe completed.")
+                print("    CDP full origin wipe (Webshare + Google) completed.")
             except Exception as e:
                 print(f"    [Warning] CDP deep clear failed: {e}")
 
@@ -355,6 +372,18 @@ def run_automation():
                 print("    JS storage + cache + SW wipe completed.")
             except Exception as eval_err:
                 print(f"    [Warning] JS storage clearing ignored: {eval_err}")
+
+            # Organic warm-up: move mouse around the page randomly before interacting
+            # This makes the first click look less like an instant bot action
+            print("    Organic warm-up (random mouse movements)...")
+            vw = ws_page.evaluate("window.innerWidth")
+            vh = ws_page.evaluate("window.innerHeight")
+            for _ in range(random.randint(5, 10)):
+                _human_move(ws_page,
+                            random.randint(int(vw * 0.1), int(vw * 0.9)),
+                            random.randint(int(vh * 0.1), int(vh * 0.9)),
+                            steps=random.randint(8, 15))
+                ws_page.wait_for_timeout(random.randint(200, 500))
 
             for registration_attempt in range(3):
                 print(f"\n[3] Opening Webshare homepage (attempt {registration_attempt+1})...")
@@ -786,6 +815,10 @@ def run_automation():
         finally:
             try:
                 browser.close()
+            except Exception:
+                pass
+            try:
+                ws_context.close()
             except Exception:
                 pass
             if steel_client and steel_session:
