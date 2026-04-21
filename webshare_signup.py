@@ -531,41 +531,46 @@ def run_automation():
 
                 ws_page.wait_for_timeout(random.randint(400, 800))
 
-                # ── 6. Terms checkbox ───────────────────────────────
+                # ── 6. Terms checkbox ──────────────────────────────
+                # CRITICAL: The label around this checkbox contains
+                # "Terms of Service" and "Privacy Policy" as clickable <a> tags
+                # that go to /terms and /privacy. Clicking the label with a
+                # random offset can hit one of those links and navigate us
+                # away — which makes the whole flow silently fail.
+                # So: always click the <input> itself. Its bounding box is
+                # ~20x20px, so any random point within it is safe.
                 print("[6] Accepting Terms & Conditions...")
                 checkbox_el = ws_page.locator("input[type='checkbox']").first
                 checkbox_el.scroll_into_view_if_needed()
                 ws_page.wait_for_timeout(random.randint(250, 500))
 
-                # Prefer clicking the associated <label> with a real mouse event
-                # — force=True bypasses actionability checks and looks synthetic.
-                # Webshare's checkbox has a label whose `for` matches the input id,
-                # OR the input is wrapped in a label. Try the label first.
-                clicked_naturally = False
+                url_before_checkbox = ws_page.url
                 try:
-                    cb_id = checkbox_el.get_attribute("id") or ""
-                    label_loc = None
-                    if cb_id:
-                        label_loc = ws_page.locator(f"label[for='{cb_id}']").first
-                    if label_loc is None or not label_loc.is_visible(timeout=500):
-                        label_loc = ws_page.locator("label:has(input[type='checkbox'])").first
-                    if label_loc.is_visible(timeout=1500):
-                        _human_click(ws_page, label_loc)
-                        clicked_naturally = True
-                except Exception:
-                    pass
-
-                if not clicked_naturally:
-                    # Fall back to clicking the input directly (still a real mouse event).
-                    try:
-                        _human_click(ws_page, checkbox_el)
-                    except Exception:
-                        # Last resort: focus + space. Still a real keyboard event.
-                        checkbox_el.focus()
-                        ws_page.wait_for_timeout(random.randint(120, 260))
-                        ws_page.keyboard.press("Space")
+                    _human_click(ws_page, checkbox_el)
+                except Exception as cb_err:
+                    print(f"    Direct checkbox click failed ({cb_err}); using focus + Space.")
+                    checkbox_el.focus()
+                    ws_page.wait_for_timeout(random.randint(120, 260))
+                    ws_page.keyboard.press("Space")
 
                 ws_page.wait_for_timeout(random.randint(350, 700))
+
+                # Safety: if we somehow navigated away (e.g. hit the Terms link),
+                # go back and try again via keyboard.
+                if "/register" not in ws_page.url:
+                    print(f"    [WARN] Navigated away to {ws_page.url!r} — going back.")
+                    try:
+                        ws_page.go_back(timeout=15000, wait_until="domcontentloaded")
+                    except Exception:
+                        ws_page.goto(url_before_checkbox, timeout=30000)
+                    ws_page.wait_for_timeout(1500)
+                    checkbox_el = ws_page.locator("input[type='checkbox']").first
+                    checkbox_el.scroll_into_view_if_needed()
+                    checkbox_el.focus()
+                    ws_page.wait_for_timeout(random.randint(120, 260))
+                    ws_page.keyboard.press("Space")
+                    ws_page.wait_for_timeout(random.randint(350, 700))
+
                 is_checked = checkbox_el.is_checked()
                 print(f"    Checkbox checked: {is_checked}")
                 if not is_checked:
@@ -594,10 +599,50 @@ def run_automation():
                 signup_el.scroll_into_view_if_needed()
                 ws_page.wait_for_timeout(random.randint(250, 500))
 
+                # Wait for grecaptcha to actually be loaded + ready. Clicking
+                # the button BEFORE `grecaptcha.execute` is wired up means the
+                # form submits without a token and Webshare bounces you back.
+                print("    Waiting for grecaptcha to be ready...")
+                for _ in range(20):
+                    try:
+                        ready = ws_page.evaluate(
+                            "() => typeof window.grecaptcha !== 'undefined' && typeof window.grecaptcha.execute === 'function'"
+                        )
+                    except Exception:
+                        ready = False
+                    if ready:
+                        print("    grecaptcha is ready.")
+                        break
+                    ws_page.wait_for_timeout(500)
+                else:
+                    print("    [WARN] grecaptcha never became ready — proceeding anyway.")
+
+                # Sanity check: if the button is disabled, don't click yet
+                # (that would generate a wasted click event that reCAPTCHA
+                # scores as suspicious).
+                try:
+                    disabled = signup_el.get_attribute("disabled")
+                    if disabled is not None:
+                        print("    [WARN] Sign Up button is disabled — waiting 3s for form validation.")
+                        ws_page.wait_for_timeout(3000)
+                except Exception:
+                    pass
+
                 MAX_CAPTCHA_ATTEMPTS = 3
                 has_recaptcha = False
 
                 print("\n[7] Clicking 'Sign Up' with human-like motion (single click)...")
+                # Briefly hover the button first — real users pause on hover
+                # for ~200–500ms before committing to a click.
+                try:
+                    signup_box = signup_el.bounding_box()
+                    if signup_box:
+                        hover_x = signup_box["x"] + signup_box["width"] * random.uniform(0.35, 0.65)
+                        hover_y = signup_box["y"] + signup_box["height"] * random.uniform(0.35, 0.65)
+                        _human_move(ws_page, hover_x, hover_y)
+                        ws_page.wait_for_timeout(random.randint(250, 600))
+                except Exception:
+                    pass
                 _human_click(ws_page, signup_el)
 
                 # Up to 30s for something to happen: URL change, bframe, or
