@@ -646,7 +646,7 @@ def run_automation():
                     print("    [WARN] Neither redirect nor challenge after 30s — likely a silent low-score block.")
 
                 # ── 8. Solve captcha if it appeared ──────────────────────
-                if has_recaptcha and "/register" in ws_page.url:
+                if outcome == "challenge" and "/register" in ws_page.url:
                     print("\n[8] reCAPTCHA detected — solving via audio challenge...")
                     for f in ws_page.frames:
                         if "recaptcha" in f.url:
@@ -668,27 +668,47 @@ def run_automation():
                             else:
                                 print("    All auto-solve attempts exhausted.")
                                 print("    >>> Please solve the CAPTCHA manually in the live viewer <<<")
-                elif "/register" not in ws_page.url:
+
+                    # Wait for URL to leave /register after solving (up to 60s).
+                    print("    Waiting for sign-up redirect post-solve...")
+                    for _ in range(60):
+                        if "/register" not in ws_page.url or ws_page.url.endswith("register?"):
+                            break
+                        ws_page.wait_for_timeout(1000)
+
+                elif outcome == "redirect":
                     print("    No CAPTCHA needed — sign-up went through!")
+                elif outcome == "error":
+                    print("    Inline form error — retrying the whole flow.")
                 else:
-                    print("    No reCAPTCHA iframe found after all attempts — waiting for redirect...")
+                    # Neither redirect nor challenge after 30s — the invisible
+                    # captcha almost certainly returned a low-score token that
+                    # Webshare's server silently rejected. Retry the whole flow
+                    # rather than waste 3 more minutes waiting for a redirect
+                    # that will never come.
+                    print("    No redirect and no challenge — will retry the whole flow.")
 
-                # Wait for URL to leave /register (auto-solved or manual)
-                print("    Waiting for sign-up redirect...")
-                
-                # We use a manual polling loop instead of a lambda to avoid Playwright evaluation hangs
-                for _ in range(180):
-                    if "/register" not in ws_page.url or ws_page.url.endswith("register?"):
-                        break
-                    ws_page.wait_for_timeout(1000)
-                    
-                print("    Sign-up step finished or redirected!")
+                print("    Sign-up step finished!")
 
+                # Decide whether to retry the whole registration flow.
+                # - Successful: URL is outside /register (dashboard/activation pending etc).
+                # - Silent fail: URL ends in /register? OR still on /register with no challenge.
+                on_register = "/register" in ws_page.url
+                silent_fail = on_register and outcome in (None, "error")
 
-                if ws_page.url.endswith("/register?"):
-                    print(f"    [WARNING] Webshare redirected to /register? (attempt {registration_attempt+1}). Retrying...")
+                if silent_fail or ws_page.url.endswith("/register?"):
+                    print(f"    [WARNING] Silent bounce back to /register (attempt {registration_attempt+1}). Retrying...")
                     yield {"status": "info", "message": "Applying stealth form retry..."}
-                    ws_page.wait_for_timeout(2000)
+                    # Give the session a short cool-down + some mouse/scroll activity
+                    # before the next attempt, so Google can see continued human-like
+                    # behaviour before we try again.
+                    try:
+                        ws_page.mouse.wheel(0, random.randint(100, 300))
+                        ws_page.wait_for_timeout(random.randint(1500, 3000))
+                        ws_page.mouse.wheel(0, -random.randint(60, 180))
+                    except Exception:
+                        pass
+                    ws_page.wait_for_timeout(random.randint(2500, 4500))
                     continue
                 else:
                     break
