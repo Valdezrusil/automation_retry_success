@@ -162,6 +162,7 @@ def run_automation():
             steel_client = Steel(steel_api_key=steel_api_key)
             steel_session = steel_client.sessions.create(
                 timeout=900000,  # 15 minutes (hobby plan max)
+                use_proxy=True,  # Fresh residential proxy IP per session
             )
             _steel_client = steel_client
             _steel_session_id = str(steel_session.id)
@@ -304,36 +305,56 @@ def run_automation():
 
             # ── 3. Initialize Webshare page & Clear Extraneous Data ──
             print("\n    Deep-clearing all browser state and cache before Webshare...")
-            ws_page = context.new_page()
-            
+
+            # Create a completely NEW browser context for Webshare
+            # This gives isolated cookies, localStorage, indexedDB, service workers, cache
+            ws_context = browser.new_context()
+            ws_page = ws_context.new_page()
+            stealth.apply_stealth_sync(ws_page)
+            ws_page.on("response", _intercept_proxy_response)
+
+            # Navigate first so we have permission to clear origin-specific data
+            ws_page.goto("https://webshare.io", timeout=60000)
+
             try:
-                # Use CDP to clear deep browser network cache and cookies
-                cdp = context.new_cdp_session(ws_page)
-                cdp.send('Network.clearBrowserCookies')
+                # Comprehensive CDP wipe: cookies, localStorage, indexedDB, cache, service workers, etc.
+                cdp = ws_context.new_cdp_session(ws_page)
+                cdp.send('Storage.clearDataForOrigin', {
+                    'origin': 'https://webshare.io',
+                    'storageTypes': 'all',
+                })
                 cdp.send('Network.clearBrowserCache')
+                cdp.send('Network.clearBrowserCookies')
+                print("    CDP full origin wipe completed.")
             except Exception as e:
                 print(f"    [Warning] CDP deep clear failed: {e}")
-                
-            # Clear playwright context cookies
-            context.clear_cookies()
-            
-            # Navigate specifically to webshare so we have permission to clear its local storage
-            ws_page.goto("https://webshare.io", timeout=60000)
+
+            # Also wipe via JavaScript for anything CDP might have missed
             try:
-                ws_page.evaluate("""(() => { 
-                    localStorage.clear(); 
-                    sessionStorage.clear(); 
+                ws_page.evaluate("""(() => {
+                    localStorage.clear();
+                    sessionStorage.clear();
                     if (window.indexedDB && window.indexedDB.databases) {
                         window.indexedDB.databases().then(dbs => {
                             dbs.forEach(db => window.indexedDB.deleteDatabase(db.name));
                         });
                     }
+                    // Unregister all service workers
+                    if (navigator.serviceWorker) {
+                        navigator.serviceWorker.getRegistrations().then(regs => {
+                            regs.forEach(reg => reg.unregister());
+                        });
+                    }
+                    // Clear caches
+                    if (window.caches) {
+                        caches.keys().then(names => {
+                            names.forEach(name => caches.delete(name));
+                        });
+                    }
                 })()""")
+                print("    JS storage + cache + SW wipe completed.")
             except Exception as eval_err:
-                print(f"    [Warning] Storage clearing ignored: {eval_err}")
-            
-            stealth.apply_stealth_sync(ws_page)
-            ws_page.on("response", _intercept_proxy_response)
+                print(f"    [Warning] JS storage clearing ignored: {eval_err}")
 
             for registration_attempt in range(3):
                 print(f"\n[3] Opening Webshare homepage (attempt {registration_attempt+1})...")
