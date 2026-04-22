@@ -589,21 +589,34 @@ def run_automation():
                 print(f"Email used   : {temp_email}")
                 print(f"Password used: {password}")
 
-                # ── 7. Click Sign Up (ONCE) + long wait for captcha/redirect ──
-                # We used to click up to 5 times if nothing happened, but every
-                # extra click increases the bot score, making the NEXT click even
-                # more likely to silent-fail. Click ONCE, wait generously, and
-                # only retry the entire flow (fresh page) if nothing happened.
+                # ── 7. Click Sign Up + observe grecaptcha telemetry ──────
+                # The *real* reason nothing appears to happen on Render is
+                # almost always one of these three:
+                #   (a) Our click never triggers grecaptcha.execute() because
+                #       React's synthetic event system treats `mouse.down/up`
+                #       as a non-trusted click on the submit button.
+                #   (b) grecaptcha.execute() DOES fire, Google scores us very
+                #       low, returns a bad token, Webshare silently rejects.
+                #   (c) grecaptcha is not yet wired up when we click.
+                #
+                # This block instruments and defends against all three:
+                #   1. Listen for the reCAPTCHA telemetry POST to
+                #      /recaptcha/api2/reload (that is the smoking gun that
+                #      `grecaptcha.execute()` actually ran).
+                #   2. Use Playwright's NATIVE locator.click() — it fires a
+                #      proper trusted click that React always picks up.
+                #   3. If no reload fires within 5s, call grecaptcha.execute()
+                #      directly from the page context.
+                #   4. Keep doing micro-mouse-movements throughout the wait
+                #      window so Google has real behavioural data to grade.
                 yield {"status": "step", "step_num": 4, "message": "Solving reCAPTCHA & verifying"}
                 signup_el = ws_page.locator("button[type='submit'], button:has-text('Sign Up With Email')").first
                 signup_el.scroll_into_view_if_needed()
                 ws_page.wait_for_timeout(random.randint(250, 500))
 
-                # Wait for grecaptcha to actually be loaded + ready. Clicking
-                # the button BEFORE `grecaptcha.execute` is wired up means the
-                # form submits without a token and Webshare bounces you back.
+                # Wait for grecaptcha to be fully wired up BEFORE we click.
                 print("    Waiting for grecaptcha to be ready...")
-                for _ in range(20):
+                for _ in range(30):
                     try:
                         ready = ws_page.evaluate(
                             "() => typeof window.grecaptcha !== 'undefined' && typeof window.grecaptcha.execute === 'function'"
@@ -617,9 +630,23 @@ def run_automation():
                 else:
                     print("    [WARN] grecaptcha never became ready — proceeding anyway.")
 
-                # Sanity check: if the button is disabled, don't click yet
-                # (that would generate a wasted click event that reCAPTCHA
-                # scores as suspicious).
+                # Log the sitekey so we can confirm which widget we're dealing with.
+                try:
+                    sitekey = ws_page.evaluate(
+                        """() => {
+                            const el = document.querySelector('[data-sitekey]');
+                            if (el) return el.getAttribute('data-sitekey');
+                            const src = [...document.querySelectorAll('iframe[src*="/recaptcha/"]')]
+                                .map(f => f.src).find(s => s.includes('k=')) || '';
+                            const m = src.match(/[?&]k=([^&]+)/);
+                            return m ? m[1] : null;
+                        }"""
+                    )
+                    print(f"    Detected reCAPTCHA sitekey: {sitekey!r}")
+                except Exception:
+                    sitekey = None
+
+                # If the button is disabled, wait for form validation.
                 try:
                     disabled = signup_el.get_attribute("disabled")
                     if disabled is not None:
@@ -628,39 +655,100 @@ def run_automation():
                 except Exception:
                     pass
 
+                # Attach a one-shot network listener that tells us whether
+                # grecaptcha.execute() actually ran. Every call to execute()
+                # triggers a POST to /recaptcha/api2/reload (or enterprise/reload).
+                recaptcha_fired = {"flag": False, "count": 0}
+
+                def _on_request(req):
+                    u = req.url
+                    if "/recaptcha/api2/reload" in u or "/recaptcha/enterprise/reload" in u:
+                        recaptcha_fired["flag"] = True
+                        recaptcha_fired["count"] += 1
+
+                ws_page.on("request", _on_request)
+
                 MAX_CAPTCHA_ATTEMPTS = 3
                 has_recaptcha = False
 
-                print("\n[7] Clicking 'Sign Up' with human-like motion (single click)...")
-                # Briefly hover the button first — real users pause on hover
-                # for ~200–500ms before committing to a click.
+                print("\n[7] Clicking 'Sign Up' (Playwright native click, React-safe)...")
+                # Hover first so mouse behavioural telemetry includes the
+                # approach, not just a teleport-to-click pattern.
                 try:
                     signup_box = signup_el.bounding_box()
                     if signup_box:
                         hover_x = signup_box["x"] + signup_box["width"] * random.uniform(0.35, 0.65)
                         hover_y = signup_box["y"] + signup_box["height"] * random.uniform(0.35, 0.65)
                         _human_move(ws_page, hover_x, hover_y)
-                        ws_page.wait_for_timeout(random.randint(250, 600))
+                        ws_page.wait_for_timeout(random.randint(280, 550))
                 except Exception:
                     pass
-                _human_click(ws_page, signup_el)
 
-                # Up to 30s for something to happen: URL change, bframe, or
-                # an inline error message. NO extra mouse jitter here — real
-                # users wait for the form to respond.
-                print("    Waiting up to 30s for captcha challenge or redirect...")
+                # Strategy A: Playwright native locator.click() — produces a
+                # proper trusted click event that React's synthetic event
+                # system always picks up. This is MORE reliable for React
+                # SPAs than low-level mouse.down/up.
+                try:
+                    signup_el.click(delay=random.randint(60, 130), timeout=8000)
+                    print("    Native click dispatched.")
+                except Exception as click_err:
+                    print(f"    Native click failed: {click_err}; falling back to mouse.down/up.")
+                    _human_click(ws_page, signup_el)
+
+                # Give grecaptcha.execute() a moment to issue its reload POST.
+                for _ in range(10):  # up to 5 seconds
+                    if recaptcha_fired["flag"]:
+                        print(f"    grecaptcha.execute() DID fire (reloads so far: {recaptcha_fired['count']}).")
+                        break
+                    ws_page.wait_for_timeout(500)
+
+                # Strategy B: if grecaptcha.execute() never fired, the click
+                # never reached Webshare's submit handler. Invoke execute()
+                # ourselves, pointed at the first (and only) widget.
+                if not recaptcha_fired["flag"]:
+                    print("    [INFO] No reCAPTCHA reload observed after click — forcing grecaptcha.execute() from JS.")
+                    try:
+                        ws_page.evaluate(
+                            """() => {
+                                try {
+                                    if (window.grecaptcha && typeof window.grecaptcha.execute === 'function') {
+                                        // Try the no-arg form first (works when only one widget).
+                                        window.grecaptcha.execute();
+                                        return 'execute_called';
+                                    }
+                                    return 'grecaptcha_missing';
+                                } catch (e) { return 'error:' + e.message; }
+                            }"""
+                        )
+                    except Exception as e:
+                        print(f"    [WARN] JS grecaptcha.execute() failed: {e}")
+                    # Give it another 5s to issue the reload POST.
+                    for _ in range(10):
+                        if recaptcha_fired["flag"]:
+                            print("    reCAPTCHA reload fired after manual execute().")
+                            break
+                        ws_page.wait_for_timeout(500)
+
+                # Up to 30 more seconds for something observable: URL change,
+                # bframe popup, or an inline error. Keep doing tiny mouse
+                # micro-movements so Google has real behavioural data while
+                # it scores us.
+                print("    Waiting up to 30s for captcha challenge or redirect (with keep-alive activity)...")
                 outcome = None   # "redirect" | "challenge" | "error" | None
+                vw = ws_page.evaluate("window.innerWidth")
+                vh = ws_page.evaluate("window.innerHeight")
+                last_move_at = 0
                 for tick in range(30):
-                    # Signup went through (URL left /register)?
+                    # Signup redirect?
                     if "/register" not in ws_page.url:
                         outcome = "redirect"
                         break
-                    # reCAPTCHA challenge popup appeared?
+                    # Challenge popup?
                     if _has_recaptcha_challenge(ws_page):
                         has_recaptcha = True
                         outcome = "challenge"
                         break
-                    # Any visible inline error?
+                    # Inline error?
                     try:
                         err = ws_page.evaluate(
                             """() => {
@@ -679,7 +767,27 @@ def run_automation():
                         print(f"    Inline error detected: {err!r}")
                         outcome = "error"
                         break
+
+                    # Keep-alive micro-movement every ~1.2s (variable). This is
+                    # what real users do while waiting for a form to respond
+                    # and directly improves the behavioural score.
+                    if tick - last_move_at >= 1 and random.random() < 0.7:
+                        try:
+                            tx = random.randint(int(vw * 0.25), int(vw * 0.75))
+                            ty = random.randint(int(vh * 0.25), int(vh * 0.75))
+                            _human_move(ws_page, tx, ty, steps=random.randint(6, 12))
+                        except Exception:
+                            pass
+                        last_move_at = tick
                     ws_page.wait_for_timeout(1000)
+
+                # Detach the listener to avoid it firing in later pages.
+                try:
+                    ws_page.remove_listener("request", _on_request)
+                except Exception:
+                    pass
+
+                print(f"    Telemetry: reCAPTCHA reload fired = {recaptcha_fired['flag']} (count={recaptcha_fired['count']})")
 
                 if outcome == "redirect":
                     print("    ✓ Sign-up went through without a visible challenge!")
@@ -688,7 +796,11 @@ def run_automation():
                 elif outcome == "error":
                     print("    [WARN] Form returned an inline error — will retry the whole flow.")
                 else:
-                    print("    [WARN] Neither redirect nor challenge after 30s — likely a silent low-score block.")
+                    # Differentiate the two silent-fail sub-cases for the user.
+                    if recaptcha_fired["flag"]:
+                        print("    [WARN] grecaptcha.execute() ran but Google returned a low-score token; Webshare silently rejected.")
+                    else:
+                        print("    [WARN] grecaptcha.execute() NEVER fired — the click didn't reach Webshare's submit handler.")
 
                 # ── 8. Solve captcha if it appeared ──────────────────────
                 if outcome == "challenge" and "/register" in ws_page.url:
